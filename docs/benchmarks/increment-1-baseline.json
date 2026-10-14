@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-10-14T18:17:34.426Z",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "metrics": {
+    "singleMarkerSaveAvgMs": 0.028651999999999445,
+    "singleMarkerSaveP95Ms": 0.046700000000001296,
+    "batchIngest5000RecordsMs": 150.9427,
+    "dayTimelineQueryAvgMs": 0.06544400000000053
+  },
+  "passedTargets": {
+    "singleMarkerSave": true,
+    "batchIngest": true,
+    "dayTimelineQuery": true
+  }
+}
