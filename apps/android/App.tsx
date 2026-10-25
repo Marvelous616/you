@@ -539,7 +539,7 @@ export default function App() {
           </TouchableOpacity>
           {lastSaveLatency !== null && (
             <Text style={styles.latencyText}>
-              ⚡ Saved offline in {lastSaveLatency.toFixed(3)} ms (&lt; 50 ms budget)
+              Saved offline in {lastSaveLatency.toFixed(3)} ms (&lt; 50 ms budget)
             </Text>
           )}
         </View>
@@ -639,7 +639,7 @@ export default function App() {
             <ScrollView keyboardShouldPersistTaps="handled">
               {reviewResult ? (
                 <View style={styles.completion}>
-                  <Text style={styles.confetti}>🎉</Text>
+                  <View style={styles.completionRule} />
                   <Text style={styles.completionTitle}>Day complete</Text>
                   <Text style={styles.completionFidelity}>
                     Fidelity: {reviewResult.fidelity}
@@ -754,13 +754,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   fidelityPill: {
-    backgroundColor: '#1e3a8a',
+    backgroundColor: '#334155',
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 999,
   },
   fidelityText: {
-    color: '#93c5fd',
+    color: '#cbd5e1',
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
@@ -787,13 +787,13 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   wakeButton: {
-    backgroundColor: '#f59e0b',
+    backgroundColor: '#e2e8f0',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 6,
   },
   wakeButtonText: {
-    color: '#111827',
+    color: '#0f172a',
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.5,
@@ -812,13 +812,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(239, 68, 68, 0.16)',
+    backgroundColor: 'rgba(148, 163, 184, 0.16)',
   },
   eventBlock: {
     position: 'absolute',
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#38bdf8',
+    backgroundColor: '#cbd5e1',
   },
   reviewButton: {
     backgroundColor: '#334155',
@@ -827,7 +827,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   reviewButtonText: {
-    color: '#38bdf8',
+    color: '#cbd5e1',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -862,28 +862,28 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   suggestionChip: {
-    backgroundColor: '#172554',
+    backgroundColor: '#334155',
     borderRadius: 999,
     paddingVertical: 5,
     paddingHorizontal: 10,
   },
   suggestionPerson: {
-    backgroundColor: '#3b0764',
+    backgroundColor: '#3f3f46',
   },
   suggestionText: {
-    color: '#bfdbfe',
+    color: '#cbd5e1',
     fontSize: 11,
     fontWeight: '600',
   },
   quickButton: {
-    backgroundColor: '#0284c7',
+    backgroundColor: '#e2e8f0',
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 10,
   },
   quickButtonText: {
-    color: '#ffffff',
+    color: '#0f172a',
     fontSize: 16,
     fontWeight: 'bold',
     letterSpacing: 1,
@@ -892,20 +892,20 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   markButton: {
-    backgroundColor: '#0284c7',
+    backgroundColor: '#e2e8f0',
     paddingVertical: 18,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 10,
   },
   markButtonText: {
-    color: '#ffffff',
+    color: '#0f172a',
     fontSize: 18,
     fontWeight: 'bold',
     letterSpacing: 1,
   },
   latencyText: {
-    color: '#38bdf8',
+    color: '#cbd5e1',
     fontSize: 12,
     textAlign: 'center',
     marginTop: 10,
@@ -936,7 +936,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   syncButtonText: {
-    color: '#38bdf8',
+    color: '#cbd5e1',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -958,7 +958,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   eventTime: {
-    color: '#38bdf8',
+    color: '#cbd5e1',
     fontWeight: '600',
     width: 95,
     fontSize: 13,
@@ -979,7 +979,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
     borderLeftWidth: 3,
-    borderLeftColor: '#a78bfa',
+    borderLeftColor: '#64748b',
   },
   journalBody: {
     color: '#e2e8f0',
@@ -1000,7 +1000,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   markerTime: {
-    color: '#38bdf8',
+    color: '#cbd5e1',
     fontWeight: '600',
     width: 65,
     fontSize: 14,
@@ -1057,12 +1057,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   gapMeta: {
-    color: '#f87171',
+    color: '#cbd5e1',
     fontSize: 12,
     marginTop: 2,
   },
   gapFillButton: {
-    backgroundColor: '#1e3a8a',
+    backgroundColor: '#334155',
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 6,
@@ -1070,7 +1070,7 @@ const styles = StyleSheet.create({
     maxWidth: 150,
   },
   gapFillText: {
-    color: '#93c5fd',
+    color: '#cbd5e1',
     fontSize: 11,
     fontWeight: '600',
     textAlign: 'center',
@@ -1083,14 +1083,14 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   completeButton: {
-    backgroundColor: '#16a34a',
+    backgroundColor: '#e2e8f0',
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 18,
   },
   completeButtonText: {
-    color: '#ffffff',
+    color: '#0f172a',
     fontSize: 15,
     fontWeight: 'bold',
     letterSpacing: 0.5,
@@ -1108,8 +1108,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 24,
   },
-  confetti: {
-    fontSize: 48,
+  completionRule: {
+    width: 48,
+    height: 2,
+    backgroundColor: '#64748b',
+    marginBottom: 16,
   },
   completionTitle: {
     color: '#f8fafc',
@@ -1118,7 +1121,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   completionFidelity: {
-    color: '#4ade80',
+    color: '#e2e8f0',
     fontSize: 16,
     fontWeight: '700',
     marginTop: 8,

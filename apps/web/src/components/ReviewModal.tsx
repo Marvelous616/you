@@ -100,7 +100,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
       <div style={styles.panel}>
         {result ? (
           <div style={styles.completion}>
-            <div style={styles.confetti}>🎉</div>
+            <div style={styles.completionRule} />
             <h2 style={styles.title}>Day complete</h2>
             <div style={styles.fidelity}>{result.fidelity}</div>
             <p style={styles.completionMeta}>
@@ -246,8 +246,8 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '0.06em',
   },
   error: {
-    backgroundColor: '#7f1d1d',
-    color: '#fecaca',
+    backgroundColor: '#1e293b',
+    color: '#e2e8f0',
     padding: '10px 12px',
     borderRadius: '8px',
     fontSize: '0.8rem',
@@ -279,7 +279,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.9rem',
   },
   gapMeta: {
-    color: '#f87171',
+    color: '#cbd5e1',
     fontSize: '0.75rem',
     marginTop: '2px',
   },
@@ -289,8 +289,8 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
   },
   templateButton: {
-    backgroundColor: '#1e3a8a',
-    color: '#93c5fd',
+    backgroundColor: '#334155',
+    color: '#cbd5e1',
     border: 'none',
     borderRadius: '6px',
     padding: '7px 10px',
@@ -332,8 +332,8 @@ const styles: Record<string, React.CSSProperties> = {
   primary: {
     width: '100%',
     marginTop: '20px',
-    backgroundColor: '#16a34a',
-    color: '#fff',
+    backgroundColor: '#e2e8f0',
+    color: '#0f172a',
     border: 'none',
     borderRadius: '8px',
     padding: '13px',
@@ -346,11 +346,14 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
     padding: '20px 0',
   },
-  confetti: {
-    fontSize: '3rem',
+  completionRule: {
+    width: '48px',
+    height: '2px',
+    backgroundColor: '#64748b',
+    margin: '0 auto 16px',
   },
   fidelity: {
-    color: '#4ade80',
+    color: '#e2e8f0',
     fontSize: '1.1rem',
     fontWeight: 700,
     textTransform: 'uppercase',

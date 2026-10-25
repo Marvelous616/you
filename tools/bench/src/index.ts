@@ -29,7 +29,7 @@ function percentile(sortedSamples: number[], ratio: number): number {
 
 async function runBenchmark() {
   console.log('====================================================');
-  console.log('🚀 Running Life Logger Increment 2 Benchmark Suite');
+  console.log('Running Life Logger Increment 2 Benchmark Suite');
   console.log('====================================================');
 
   const db = new DatabaseSync(':memory:');
@@ -168,7 +168,7 @@ async function runBenchmark() {
 
   const outputPath = path.join(outputDir, 'increment-2-baseline.json');
   fs.writeFileSync(outputPath, JSON.stringify(results, null, 2), 'utf8');
-  console.log(`\n✅ Benchmark metrics successfully recorded to ${outputPath}`);
+  console.log(`\nBenchmark metrics successfully recorded to ${outputPath}`);
 
   const failedTargets = Object.entries(results.passedTargets)
     .filter(([, passed]) => !passed)

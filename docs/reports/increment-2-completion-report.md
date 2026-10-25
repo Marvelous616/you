@@ -31,15 +31,15 @@ Everything in the loop is available offline on Android. The review endpoint deri
 
 | WP | Deliverable | Status |
 |---|---|---|
-| **WP 2.1** | Day wake/sleep lifecycle, review state transitions, derived fidelity and coverage | ✅ Complete |
-| **WP 2.2** | Interval events with precision, multi-lane overlap layout | ✅ Complete |
-| **WP 2.3** | Hierarchical tag tree, primary tag assignment, Migration 2 schema | ✅ Complete |
-| **WP 2.4** | Person registry, alias matching, event participants | ✅ Complete |
-| **WP 2.5** | Deterministic rule-based quick-entry parser v0 with 31 parser tests | ✅ Complete |
-| **WP 2.6** | Journal entries, persistence, API, Android/Web display | ✅ Complete |
-| **WP 2.7** | Timeline/gap engine and multi-lane UI on Web + mini timeline on Android | ✅ Complete |
-| **WP 2.8** | End-of-day review modal/wizard with gap templates, journal, sleep, confetti summary | ✅ Complete |
-| **WP 2.9** | Transactional sync for all nine entity types and rejection-safe mobile outbox | ✅ Complete |
+| **WP 2.1** | Day wake/sleep lifecycle, review state transitions, derived fidelity and coverage | Complete |
+| **WP 2.2** | Interval events with precision, multi-lane overlap layout | Complete |
+| **WP 2.3** | Hierarchical tag tree, primary tag assignment, Migration 2 schema | Complete |
+| **WP 2.4** | Person registry, alias matching, event participants | Complete |
+| **WP 2.5** | Deterministic rule-based quick-entry parser v0 with 31 parser tests | Complete |
+| **WP 2.6** | Journal entries, persistence, API, Android/Web display | Complete |
+| **WP 2.7** | Timeline/gap engine and multi-lane UI on Web + mini timeline on Android | Complete |
+| **WP 2.8** | End-of-day review modal/wizard with gap templates, journal, sleep, completion summary | Complete |
+| **WP 2.9** | Transactional sync for all nine entity types and rejection-safe mobile outbox | Complete |
 
 ---
 
@@ -105,11 +105,11 @@ Additional gates:
 
 | Gate | Result |
 |---|---|
-| Root TypeScript build (`tsc -b`) | ✅ Passed |
-| Web production build (`tsc -b && vite build`) | ✅ Passed |
-| Android typecheck (`tsc --noEmit -p apps/android`) | ✅ Passed |
-| Quick-entry save/outbox test | ✅ `< 50 ms` asserted |
-| Rejected sync records remain pending | ✅ Asserted |
+| Root TypeScript build (`tsc -b`) | Passed |
+| Web production build (`tsc -b && vite build`) | Passed |
+| Android typecheck (`tsc --noEmit -p apps/android`) | Passed |
+| Quick-entry save/outbox test | `< 50 ms` asserted |
+| Rejected sync records remain pending | Asserted |
 
 ---
 

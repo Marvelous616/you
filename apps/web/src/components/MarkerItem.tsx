@@ -21,9 +21,9 @@ export const MarkerItem: React.FC<MarkerItemProps> = ({ marker }) => {
       backgroundColor: '#1e293b',
       borderRadius: '8px',
       marginBottom: '10px',
-      borderLeft: '4px solid #38bdf8'
+      borderLeft: '4px solid #64748b'
     }}>
-      <div style={{ minWidth: '85px', fontWeight: 600, color: '#38bdf8', fontSize: '0.95rem' }}>
+      <div style={{ minWidth: '85px', fontWeight: 600, color: '#cbd5e1', fontSize: '0.95rem' }}>
         {time}
       </div>
       <div style={{ flex: 1 }}>
@@ -44,8 +44,8 @@ export const MarkerItem: React.FC<MarkerItemProps> = ({ marker }) => {
             fontSize: '0.75rem',
             padding: '2px 8px',
             borderRadius: '9999px',
-            backgroundColor: '#1e3a8a',
-            color: '#93c5fd'
+            backgroundColor: '#334155',
+            color: '#cbd5e1'
           }}>
             {marker.source}
           </span>

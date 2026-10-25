@@ -176,8 +176,9 @@ export const App: React.FC = () => {
 
 const styles: Record<string, React.CSSProperties> = {
   errorBanner: {
-    backgroundColor: '#ef4444',
-    color: '#fff',
+    backgroundColor: '#1e293b',
+    color: '#e2e8f0',
+    borderBottom: '1px solid #334155',
     padding: '10px 16px',
     textAlign: 'center',
     fontSize: '0.9rem',
