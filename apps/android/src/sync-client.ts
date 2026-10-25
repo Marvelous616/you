@@ -45,6 +45,16 @@ export class MobileSyncClient {
       }
 
       const responseData = (await res.json()) as PushSyncResponse;
+
+      if (responseData.rejected.length > 0) {
+        return {
+          syncedCount: 0,
+          error: `Sync rejected ${responseData.rejected.length} record(s): ${responseData.rejected
+            .map((item) => `${item.entityId} (${item.reason})`)
+            .join(', ')}`,
+        };
+      }
+
       const syncedIds = pendingItems.map((item) => item.id);
       await this.storage.markOutboxItemsSynced(syncedIds);
 

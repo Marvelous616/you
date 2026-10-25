@@ -89,9 +89,14 @@ describe('Fastify Server API', () => {
 
     expect(pullRes.statusCode).toBe(200);
     const pullBody = JSON.parse(pullRes.body);
-    expect(pullBody.records).toHaveLength(1);
-    expect(pullBody.records[0].entityId).toBe('marker-sync-1');
-    expect(pullBody.records[0].data.note).toBe('Walk outside');
+    const markerRecord = pullBody.records.find(
+      (record: { entityType: string }) => record.entityType === 'marker'
+    );
+    expect(markerRecord.entityId).toBe('marker-sync-1');
+    expect(markerRecord.data.note).toBe('Walk outside');
+    expect(
+      pullBody.records.some((record: { entityType: string }) => record.entityType === 'day')
+    ).toBe(true);
 
     // Query markers by day
     const markersRes = await app.inject({

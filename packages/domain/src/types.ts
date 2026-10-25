@@ -53,3 +53,61 @@ export interface Event extends EntityMetadata {
   source: CaptureSource;
   notes?: string;
 }
+
+export interface Tag extends EntityMetadata {
+  name: string;
+  /** Slash-separated hierarchy, e.g. "work/coding" or "food/lunch". */
+  path: string;
+  color?: string;
+  parentId?: UUID;
+}
+
+export interface EventTag {
+  eventId: UUID;
+  tagId: UUID;
+  isPrimary: boolean;
+}
+
+export type ParticipantMedium = 'in_person' | 'call' | 'text' | 'video' | 'online';
+export type ParticipantInitiation = 'me' | 'them' | 'mutual';
+
+export interface Person extends EntityMetadata {
+  displayName: string;
+  aliases: string[];
+  notes?: string;
+}
+
+export interface EventParticipant {
+  eventId: UUID;
+  personId: UUID;
+  /** Relationship to the event, e.g. "with". */
+  role: string;
+  medium: ParticipantMedium;
+  initiatedBy: ParticipantInitiation;
+}
+
+export interface JournalEntry extends EntityMetadata {
+  dayId: UUID;
+  body: string;
+  writtenAt: ISODateTimeString;
+  source: CaptureSource;
+}
+
+export interface Capture extends EntityMetadata {
+  rawText: string;
+  capturedAt: ISODateTimeString;
+  /** Identifier of the parser that handled the capture, e.g. "rule-parser-v0". */
+  parsedBy: string;
+}
+
+/**
+ * Generic state-of-mind / context sample. Dimensions are strings so new
+ * dimensions require no schema migration.
+ */
+export interface ContextObservation extends EntityMetadata {
+  dimension: string;
+  value: string;
+  observedAt: ISODateTimeString;
+  subjectType?: 'day' | 'event' | 'person';
+  subjectId?: UUID;
+}

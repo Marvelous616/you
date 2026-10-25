@@ -1,4 +1,4 @@
-import { Marker, Day } from '@life-logger/domain';
+import { Marker, Day, Event } from '@life-logger/domain';
 
 export function generateSyntheticDataset(markerCount: number = 5000): { days: Day[]; markers: Marker[] } {
   const days: Day[] = [];
@@ -44,4 +44,35 @@ export function generateSyntheticDataset(markerCount: number = 5000): { days: Da
   }
 
   return { days, markers };
+}
+
+/**
+ * Generates a dense day of overlapping interval events for timeline and
+ * multi-lane rendering benchmarks.
+ */
+export function generateEventDataset(dayId: string, eventCount: number = 50): Event[] {
+  const base = new Date('2026-01-01T08:00:00.000Z').getTime();
+  const events: Event[] = [];
+
+  for (let i = 0; i < eventCount; i++) {
+    const startMs = base + i * 15 * 60_000;
+    const endMs = startMs + (40 + (i % 5) * 10) * 60_000;
+    const timestamp = new Date(startMs).toISOString();
+
+    events.push({
+      id: `synthetic-event-${i}`,
+      dayId,
+      title: `Synthetic activity ${i}`,
+      startAt: timestamp,
+      endAt: new Date(endMs).toISOString(),
+      startPrecision: 'exact',
+      endPrecision: 'exact',
+      source: 'live',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      isDeleted: false,
+    });
+  }
+
+  return events;
 }

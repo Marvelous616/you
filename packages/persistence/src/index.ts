@@ -3,3 +3,8 @@ export * from './sqlite/db.js';
 export * from './sqlite/migrations.js';
 export * from './sqlite/marker-repository.js';
 export * from './sqlite/day-repository.js';
+export * from './sqlite/event-repository.js';
+export * from './sqlite/tag-repository.js';
+export * from './sqlite/person-repository.js';
+export * from './sqlite/journal-repository.js';
+export * from './sqlite/capture-repository.js';

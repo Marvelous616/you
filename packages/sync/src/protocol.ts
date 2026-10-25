@@ -1,4 +1,25 @@
-export type EntitySyncType = 'marker' | 'day' | 'event';
+export type EntitySyncType =
+  | 'marker'
+  | 'day'
+  | 'event'
+  | 'tag'
+  | 'event_tag'
+  | 'person'
+  | 'event_participant'
+  | 'journal_entry'
+  | 'capture';
+
+export const ENTITY_SYNC_TYPES: readonly EntitySyncType[] = [
+  'marker',
+  'day',
+  'event',
+  'tag',
+  'event_tag',
+  'person',
+  'event_participant',
+  'journal_entry',
+  'capture',
+];
 
 export interface SyncRecordPayload<T = unknown> {
   entityType: EntitySyncType;

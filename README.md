@@ -4,12 +4,12 @@ A personal, self-hosted system that records what you did and what state you were
 
 ## Monorepo Architecture
 
-- [`packages/domain`](./packages/domain): Pure TypeScript domain entities (`Day`, `Marker`, `Event`), logical day resolution, and Last-Write-Wins (LWW) conflict handling.
-- [`packages/persistence`](./packages/persistence): Repository interfaces (`IMarkerRepository`, `IDayRepository`), SQLite (WAL mode) implementations, and engine-agnostic contract test suite.
-- [`packages/sync`](./packages/sync): Outbox engine, batch push/pull protocol, and cursor-based synchronization.
-- [`apps/server`](./apps/server): Node.js + Fastify API service with single-user authentication and SQLite sync ingestion.
-- [`apps/web`](./apps/web): React + Vite web application displaying the chronological marker timeline for the active logical day.
-- [`apps/android`](./apps/android): React Native / Expo companion app featuring one-tap offline marker capture (< 50ms) and automatic outbox sync.
+- [`packages/domain`](./packages/domain): Pure TypeScript domain entities (`Day`, `Marker`, `Event`, `Tag`, `Person`, `JournalEntry`, `Capture`), logical day resolution, timeline lanes and gap detection, derived day fidelity, deterministic quick-entry parsing, and Last-Write-Wins (LWW) conflict handling.
+- [`packages/persistence`](./packages/persistence): Repository interfaces for days, markers, events, tags, people, journal entries and captures; SQLite (WAL mode) implementations; forward-only migrations and an engine-agnostic contract test suite.
+- [`packages/sync`](./packages/sync): Outbox engine, batch push/pull protocol across all Daily Loop entity types, and cursor-based synchronization.
+- [`apps/server`](./apps/server): Node.js + Fastify API service with single-user authentication, transactional sync ingestion, day timeline/gap endpoints, journal and end-of-day review endpoints.
+- [`apps/web`](./apps/web): React + Vite web application with a multi-lane day timeline, gap detection, quick-entry capture, journal, and end-of-day review modal.
+- [`apps/android`](./apps/android): React Native / Expo companion app featuring quick-entry parsing, one-tap offline marker capture (< 50ms), a mini day timeline, offline review, and automatic outbox sync.
 - [`tools/bench`](./tools/bench): Synthetic dataset generator and benchmark harness.
 - [`scripts/`](./scripts): Automated SQLite online backup and sandbox disaster recovery tests.
 

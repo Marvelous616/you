@@ -44,6 +44,95 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 2,
+    description: 'Daily Loop entities: events, tags, people, journal entries and captures',
+    up: (db: DatabaseSync) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS tags (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          path TEXT NOT NULL UNIQUE,
+          color TEXT,
+          parent_id TEXT REFERENCES tags(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS events (
+          id TEXT PRIMARY KEY,
+          day_id TEXT NOT NULL REFERENCES days(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          start_at TEXT NOT NULL,
+          end_at TEXT,
+          start_precision TEXT NOT NULL DEFAULT 'exact',
+          end_precision TEXT NOT NULL DEFAULT 'exact',
+          source TEXT NOT NULL DEFAULT 'live',
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS event_tags (
+          event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+          is_primary INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (event_id, tag_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS people (
+          id TEXT PRIMARY KEY,
+          display_name TEXT NOT NULL,
+          aliases_json TEXT NOT NULL DEFAULT '[]',
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS event_participants (
+          event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+          role TEXT NOT NULL DEFAULT 'with',
+          medium TEXT NOT NULL DEFAULT 'in_person',
+          initiated_by TEXT NOT NULL DEFAULT 'mutual',
+          PRIMARY KEY (event_id, person_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS journal_entries (
+          id TEXT PRIMARY KEY,
+          day_id TEXT NOT NULL REFERENCES days(id) ON DELETE CASCADE,
+          body TEXT NOT NULL,
+          written_at TEXT NOT NULL,
+          source TEXT NOT NULL DEFAULT 'live',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS captures (
+          id TEXT PRIMARY KEY,
+          raw_text TEXT NOT NULL,
+          captured_at TEXT NOT NULL,
+          parsed_by TEXT NOT NULL DEFAULT 'rule-parser-v0',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_events_day_id ON events(day_id);
+        CREATE INDEX IF NOT EXISTS idx_events_start_at ON events(start_at);
+        CREATE INDEX IF NOT EXISTS idx_events_updated_at ON events(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_tags_path ON tags(path);
+        CREATE INDEX IF NOT EXISTS idx_journal_day_id ON journal_entries(day_id);
+        CREATE INDEX IF NOT EXISTS idx_journal_updated_at ON journal_entries(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_people_updated_at ON people(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_captures_updated_at ON captures(updated_at);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

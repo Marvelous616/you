@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-10-25T13:52:46.521Z",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "metrics": {
+    "singleMarkerSaveAvgMs": 0.035539999999999454,
+    "singleMarkerSaveP95Ms": 0.06999999999999318,
+    "batchIngest5000RecordsMs": 152.9512,
+    "dayTimelineQueryAvgMs": 0.0854219999999998,
+    "quickEntryParseAvgMs": 0.01591189999999972,
+    "quickEntryParseP95Ms": 0.01269999999999527,
+    "singleEventSaveAvgMs": 0.03347200000000043,
+    "timelineLanes50EventsAvgMs": 0.058880500000002486,
+    "timelineLanes50EventsP95Ms": 0.08719999999999573
+  },
+  "passedTargets": {
+    "singleMarkerSave": true,
+    "batchIngest": true,
+    "dayTimelineQuery": true,
+    "quickEntryParse": true,
+    "singleEventSave": true,
+    "timelineLanes50Events": true
+  }
+}
