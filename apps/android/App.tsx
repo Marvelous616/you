@@ -165,7 +165,7 @@ export default function App() {
     setTags(allTags);
     setPeople(allPeople);
     setJournalEntries(journal);
-    setMarkers(markerList);
+    setMarkers(markerList.filter((marker) => !marker.dayId || marker.dayId === current.id));
     await refreshOutbox();
   }, [refreshOutbox]);
 
