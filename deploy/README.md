@@ -10,10 +10,10 @@ Fill these in as they are decided. They are repeated in the completion report.
 
 | Decision | Value | Notes |
 | --- | --- | --- |
-| Server OS | _pending_ | Run `findmnt /` and `lsblk -f`. If `/` is an `/run/archiso/cowspace` overlay, the machine is still the live installer; install Arch to the internal disk or record a written decision to accept the risk. |
-| Repository visibility | Private (recommended) | A private repository keeps journal data models and host details out of public view. |
+| Server OS | Arch Linux (owner-confirmed) | Record `uname -r` and `cat /etc/os-release` on the host. If `/` is an `/run/archiso/cowspace` overlay, the machine is still the live installer; install Arch to the internal disk or record a written decision to accept the risk. |
+| Repository visibility | Public (owner-created) | `github.com/Marvelous616/you`. Private was recommended; the owner chose public, so the secret and absolute-path scans are mandatory and real credentials stay only in `/etc/lifelogger.env`. |
 | Build location | Server first, PC fallback | A 3.8 GB Pentium may run out of memory during `npm ci` and the build. If it does, build on the PC and ship `node_modules` plus `dist` as the release artifact, and record why. |
-| Device transport | _pending_ | A: HTTPS through Tailscale (preferred). B: allow cleartext HTTP for the Android app through Expo build properties. Record the choice here. |
+| Device transport | A: HTTPS through Tailscale (recommended) | Preferred, and requires no cleartext build flag. Option B (cleartext) only if HTTPS is unavailable; record the change here if taken. |
 | Node version | PC: v24.19.0, server: _pending_ | `node -v` on both. Match the major version before the first deploy. |
 | Live vs installed OS | _pending_ | WP 3.5.4 step 1. Never deploy onto the live installer overlay. |
 
@@ -138,6 +138,8 @@ Fill these in as they are decided. They are repeated in the completion report.
    record that decision in the table above.
 5. End-to-end check: log a marker on the PC and pull it on the phone, then
    reverse. Import an `.ics` file and confirm the suggestions reach the phone.
+   Repeat once with Wi-Fi off on the phone so the traffic proves the tailnet path
+   rather than the LAN.
 
 Do not forward port 8080 on the router. The service is for the tailnet only.
 

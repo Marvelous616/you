@@ -34,10 +34,12 @@ npm run typecheck
 npm run --workspace=@life-logger/web build
 
 # Android type check
-npm run --workspace=@life-logger/android exec tsc --noEmit
+npm run --workspace=@life-logger/android typecheck
 
-# Deployment scripts (bash, Linux or Git Bash)
+# Deployment scripts (uses Git Bash on Windows)
 npm run test:deploy
+
+# Lint the deployment scripts (shellcheck must be on PATH)
 shellcheck deploy/*.sh deploy/post-receive deploy/test/*.sh
 ```
 

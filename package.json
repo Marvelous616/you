@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b",
     "lint": "npm run --workspaces --if-present lint",
-    "test:deploy": "bash deploy/test/deploy.test.sh",
+    "test:deploy": "node scripts/run-bash.mjs deploy/test/deploy.test.sh",
     "shellcheck": "shellcheck deploy/*.sh deploy/post-receive deploy/test/*.sh"
   },
   "devDependencies": {
