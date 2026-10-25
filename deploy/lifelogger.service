@@ -1,0 +1,30 @@
+[Unit]
+Description=Life Logger
+Documentation=file:/opt/lifelogger/current/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lifelogger
+Group=lifelogger
+WorkingDirectory=/opt/lifelogger/current
+EnvironmentFile=/etc/lifelogger.env
+EnvironmentFile=-/opt/lifelogger/version.env
+ExecStart=/usr/bin/node apps/server/dist/index.js
+Restart=always
+RestartSec=2
+TimeoutStopSec=20
+KillSignal=SIGTERM
+MemoryMax=1G
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/lifelogger
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lifelogger
+
+[Install]
+WantedBy=multi-user.target

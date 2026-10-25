@@ -1,28 +1,62 @@
-import { DatabaseSync } from '@life-logger/persistence';
-import { buildApp } from './app.js';
+import { DatabaseSync, MIGRATIONS } from '@life-logger/persistence';
+import { buildApp, readSchemaVersion } from './app.js';
+import { loadConfig } from './config.js';
+import { createShutdownHandler } from './shutdown.js';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 
-const PORT = parseInt(process.env.PORT || '4000', 10);
-const HOST = process.env.HOST || '0.0.0.0';
-const API_KEY = process.env.API_KEY || undefined;
+async function main(): Promise<void> {
+  const config = loadConfig();
 
-const dataDir = process.env.DATA_DIR || path.resolve(process.cwd(), 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
+  fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
 
-const dbPath = path.join(dataDir, 'life-logger.sqlite');
-console.log(`[Server] Connecting to SQLite database at: ${dbPath}`);
-const db = new DatabaseSync(dbPath);
+  console.log(
+    `[Server] Life Logger ${config.version} starting (db=${config.dbPath}, web=${config.webDir})`
+  );
+  const db = new DatabaseSync(config.dbPath);
 
-const app = buildApp({ db, apiKey: API_KEY });
+  const app = buildApp({
+    db,
+    apiKey: config.apiKey,
+    version: config.version,
+    webDir: config.webDir,
+    logger: config.logLevel === 'silent' ? false : { level: config.logLevel },
+  });
 
-app.listen({ port: PORT, host: HOST }, (err, address) => {
-  if (err) {
+  const schemaVersion = readSchemaVersion(db);
+  const codeSchemaVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;
+  console.log(`[Server] Schema version ${schemaVersion} (code supports ${codeSchemaVersion})`);
+  if (schemaVersion > codeSchemaVersion) {
+    console.warn(
+      `[Server] Database schema ${schemaVersion} is newer than this code (${codeSchemaVersion}); continuing without downgrading`
+    );
+  }
+
+  try {
+    const address = await app.listen({ port: config.port, host: config.host });
+    console.log(`[Server] Life Logger backend running at ${address}`);
+    console.log(`[Server] Health check: ${address}/health`);
+  } catch (err) {
     console.error('[Server] Fatal startup error:', err);
+    db.close();
     process.exit(1);
   }
-  console.log(`[Server] Life Logger backend running at ${address}`);
-  console.log(`[Server] Health check: ${address}/health`);
+
+  const shutdown = createShutdownHandler({
+    app,
+    db,
+    logger: (message) => console.log(message),
+  });
+
+  process.once('SIGTERM', () => {
+    void shutdown('SIGTERM');
+  });
+  process.once('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
+}
+
+main().catch((err) => {
+  console.error('[Server] Fatal startup error:', err);
+  process.exit(1);
 });

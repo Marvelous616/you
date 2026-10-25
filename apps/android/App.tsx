@@ -166,6 +166,8 @@ export default function App() {
   const [pendingCount, setPendingCount] = useState(0);
   const [lastSaveLatency, setLastSaveLatency] = useState<number | null>(null);
   const [syncStatus, setSyncStatus] = useState<string>('Ready');
+  const [serverUrlInput, setServerUrlInput] = useState(syncClient.getServerUrl());
+  const [apiKeyInput, setApiKeyInput] = useState(syncClient.getApiKey());
 
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewGaps, setReviewGaps] = useState<TimelineGap[]>([]);
@@ -339,6 +341,19 @@ export default function App() {
     await storage.saveDayAndEnqueueOutbox(updated);
     setDay(updated);
     await refreshOutbox();
+  };
+
+  const handleSaveServerConfig = () => {
+    const url = serverUrlInput.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\/\S+$/.test(url)) {
+      setSyncStatus('Server address must start with http:// or https://');
+      return;
+    }
+    syncClient.setServerUrl(url);
+    syncClient.setApiKey(apiKeyInput.trim());
+    setServerUrlInput(url);
+    setApiKeyInput(syncClient.getApiKey());
+    setSyncStatus('Server connection updated');
   };
 
   const handleSyncNow = async () => {
@@ -741,6 +756,37 @@ export default function App() {
           />
           <TouchableOpacity style={styles.markButton} onPress={handleMarkNow} activeOpacity={0.8}>
             <Text style={styles.markButtonText}>MARK NOW</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>SERVER CONNECTION</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="https://server.tailnet.ts.net"
+            placeholderTextColor="#94a3b8"
+            value={serverUrlInput}
+            onChangeText={setServerUrlInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="API key from /etc/lifelogger.env (optional)"
+            placeholderTextColor="#94a3b8"
+            value={apiKeyInput}
+            onChangeText={setApiKeyInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+          />
+          <TouchableOpacity
+            style={styles.quickButton}
+            onPress={handleSaveServerConfig}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.quickButtonText}>SAVE CONNECTION</Text>
           </TouchableOpacity>
         </View>
 

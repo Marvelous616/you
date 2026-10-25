@@ -10,11 +10,13 @@ import {
   DayTimeline,
   ReviewInput,
   ReviewResult,
+  ServerHealth,
   acceptSuggestion,
   createEvent,
   editSuggestion,
   fetchActiveDay,
   fetchDayTimeline,
+  fetchHealth,
   fetchSuggestions,
   importCalendarIcs,
   rejectSuggestion,
@@ -38,8 +40,12 @@ export const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState<boolean>(false);
+  const [serverHealth, setServerHealth] = useState<ServerHealth | null>(null);
 
   const loadData = useCallback(async () => {
+    fetchHealth()
+      .then(setServerHealth)
+      .catch(() => setServerHealth(null));
     try {
       setIsLoading(true);
       setError(null);
@@ -224,6 +230,11 @@ export const App: React.FC = () => {
           onComplete={handleCompleteReview}
         />
       )}
+      <footer style={styles.footer}>
+        {serverHealth
+          ? `Life Logger ${serverHealth.version} · schema ${serverHealth.schemaVersion} · sync protocol ${serverHealth.syncProtocolVersion}`
+          : 'Life Logger · server version unavailable'}
+      </footer>
     </div>
   );
 };
@@ -236,5 +247,13 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '10px 16px',
     textAlign: 'center',
     fontSize: '0.9rem',
+  },
+  footer: {
+    borderTop: '1px solid #334155',
+    color: '#64748b',
+    padding: '12px 16px',
+    textAlign: 'center',
+    fontSize: '0.8rem',
+    letterSpacing: '0.02em',
   },
 };

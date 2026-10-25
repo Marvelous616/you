@@ -6,8 +6,26 @@ node_modules/
 dist/
 build/
 .expo/
+.expo-shared/
 web-build/
 *.tsbuildinfo
+.expo-env.d.ts
+
+# Android and Expo native build output (created by `expo prebuild`)
+apps/android/android/
+apps/android/ios/
+.gradle/
+local.properties
+*.apk
+*.aab
+*.ipa
+
+# Signing material must never be committed
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.mobileprovision
 
 # SQLite databases & temp files
 *.sqlite
@@ -32,6 +50,11 @@ coverage/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+
+# Deploy runtime state created on the server
+deploy/.deploy.lock
 
 # OS files
 .DS_Store

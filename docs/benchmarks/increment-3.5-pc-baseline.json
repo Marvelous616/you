@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-10-25T17:41:22.911Z",
+  "environment": {
+    "hostLabel": "pc",
+    "nodeVersion": "v24.19.0",
+    "platform": "win32",
+    "arch": "x64",
+    "cpuModel": "13th Gen Intel(R) Core(TM) i7-13700HX",
+    "cpuCount": 24,
+    "totalMemoryMb": 16104,
+    "appVersion": "0.3.5"
+  },
+  "metrics": {
+    "singleMarkerSaveAvgMs": 0.03884600000000063,
+    "singleMarkerSaveP95Ms": 0.07930000000000348,
+    "batchIngest5000RecordsMs": 185.8394,
+    "dayTimelineQueryAvgMs": 0.07491399999999886,
+    "quickEntryParseAvgMs": 0.012073899999999412,
+    "quickEntryParseP95Ms": 0.017699999999990723,
+    "singleEventSaveAvgMs": 0.04444199999999341,
+    "timelineLanes50EventsAvgMs": 0.07616099999999762,
+    "timelineLanes50EventsP95Ms": 0.09600000000000364,
+    "icsParse200EventsAvgMs": 1.5915259999999956,
+    "calendarSuggestionBuild200EventsAvgMs": 0.5683499999999969,
+    "singleSuggestionSaveAvgMs": 0.03929800000000256,
+    "pendingSuggestionQueryAvgMs": 0.8670360000000017,
+    "suggestionAcceptFlowAvgMs": 0.10956600000000777
+  },
+  "passedTargets": {
+    "singleMarkerSave": true,
+    "batchIngest": true,
+    "dayTimelineQuery": true,
+    "quickEntryParse": true,
+    "singleEventSave": true,
+    "timelineLanes50Events": true,
+    "icsParse200Events": true,
+    "calendarSuggestionBuild200Events": true,
+    "singleSuggestionSave": true,
+    "pendingSuggestionQuery": true,
+    "suggestionAcceptFlow": true
+  }
+}

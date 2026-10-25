@@ -1,3 +1,9 @@
+/**
+ * Bumped only when the push/pull payload shape changes. Reported by /health so
+ * a client can detect a server that is too old or too new.
+ */
+export const SYNC_PROTOCOL_VERSION = 1;
+
 export type EntitySyncType =
   | 'marker'
   | 'day'

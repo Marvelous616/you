@@ -220,11 +220,21 @@ export async function importCalendarIcs(ics: string): Promise<CalendarImportResu
   return readJson<CalendarImportResult>(res, 'Failed to import calendar');
 }
 
-export async function checkServerHealth(): Promise<boolean> {
+export interface ServerHealth {
+  status: string;
+  version: string;
+  schemaVersion: number;
+  syncProtocolVersion: number;
+  database: string;
+  timestamp: string;
+}
+
+export async function fetchHealth(): Promise<ServerHealth | null> {
   try {
     const res = await fetch(`${API_BASE}/health`);
-    return res.ok;
+    if (!res.ok) return null;
+    return (await res.json()) as ServerHealth;
   } catch {
-    return false;
+    return null;
   }
 }

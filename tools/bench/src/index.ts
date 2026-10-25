@@ -15,8 +15,25 @@ import {
   parseQuickEntry,
 } from '@life-logger/domain';
 import { generateEventDataset, generateSyntheticDataset } from './generator.js';
+import { BenchmarkDocument, compareBenchmarks, formatRegression, MAX_REGRESSION_FACTOR } from './compare.js';
+import { HelpRequested, parseArgs, USAGE } from './cli.js';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+function readAppVersion(): string {
+  const override = process.env.APP_VERSION?.trim();
+  if (override) return override;
+
+  try {
+    const packagePath = fileURLToPath(new URL('../../../package.json', import.meta.url));
+    const parsed = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as { version?: string };
+    return parsed.version?.trim() || '0.0.0-dev';
+  } catch {
+    return '0.0.0-dev';
+  }
+}
 
 const PARSER_SAMPLES = [
   'lunch with @rahul at 1pm #food/lunch',
@@ -53,9 +70,10 @@ function generateIcsCalendar(count: number): string {
   return lines.join('\r\n');
 }
 
-async function runBenchmark() {
+async function runBenchmark(hostLabel: string): Promise<BenchmarkDocument> {
   console.log('====================================================');
   console.log('Running Life Logger Increment 3 Benchmark Suite');
+  console.log(`Host label: ${hostLabel}`);
   console.log('====================================================');
 
   const db = new DatabaseSync(':memory:');
@@ -254,12 +272,17 @@ async function runBenchmark() {
     )} ms (Target: < 25 ms)`
   );
 
-  const results = {
+  const results: BenchmarkDocument = {
     timestamp: new Date().toISOString(),
     environment: {
+      hostLabel,
       nodeVersion: process.version,
       platform: process.platform,
       arch: process.arch,
+      cpuModel: os.cpus()[0]?.model ?? 'unknown',
+      cpuCount: os.cpus().length,
+      totalMemoryMb: Math.round(os.totalmem() / 1024 / 1024),
+      appVersion: readAppVersion(),
     },
     metrics: {
       singleMarkerSaveAvgMs: avgSingleSaveMs,
@@ -292,24 +315,76 @@ async function runBenchmark() {
     },
   };
 
-  const outputDir = path.resolve(process.cwd(), 'docs', 'benchmarks');
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
+  return results;
+}
+
+function readBaseline(filePath: string): BenchmarkDocument {
+  const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as BenchmarkDocument;
+  if (!parsed || typeof parsed !== 'object' || typeof parsed.metrics !== 'object') {
+    throw new Error(`Invalid baseline file: ${filePath}`);
+  }
+  return parsed;
+}
+
+async function main(): Promise<void> {
+  let options;
+  try {
+    options = parseArgs(process.argv.slice(2));
+  } catch (err) {
+    if (err instanceof HelpRequested) {
+      console.log(USAGE);
+      return;
+    }
+    console.error(err instanceof Error ? err.message : String(err));
+    console.error('');
+    console.error(USAGE);
+    process.exitCode = 2;
+    return;
   }
 
-  const outputPath = path.join(outputDir, 'increment-3-baseline.json');
+  const results = await runBenchmark(options.hostLabel);
+
+  const outputPath = path.resolve(process.cwd(), options.outputPath);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, JSON.stringify(results, null, 2), 'utf8');
   console.log(`\nBenchmark metrics successfully recorded to ${outputPath}`);
 
-  const failedTargets = Object.entries(results.passedTargets)
+  let failed = false;
+
+  const failedTargets = Object.entries(results.passedTargets ?? {})
     .filter(([, passed]) => !passed)
     .map(([name]) => name);
   if (failedTargets.length > 0) {
-    throw new Error(`Benchmark targets failed: ${failedTargets.join(', ')}`);
+    console.error(`Benchmark targets failed: ${failedTargets.join(', ')}`);
+    failed = true;
+  } else {
+    console.log('All benchmark targets passed.');
+  }
+
+  if (options.comparePath) {
+    const baselinePath = path.resolve(process.cwd(), options.comparePath);
+    const baseline = readBaseline(baselinePath);
+    const regressions = compareBenchmarks(results, baseline);
+
+    if (regressions.length === 0) {
+      console.log(
+        `Comparison against ${baselinePath} passed (no metric over ${MAX_REGRESSION_FACTOR}x).`
+      );
+    } else {
+      console.error(`Comparison against ${baselinePath} failed:`);
+      for (const regression of regressions) {
+        console.error(`  ${formatRegression(regression)}`);
+      }
+      failed = true;
+    }
+  }
+
+  if (failed) {
+    process.exitCode = 1;
   }
 }
 
-runBenchmark().catch((err) => {
+main().catch((err) => {
   console.error('Benchmark failed:', err);
   process.exit(1);
 });

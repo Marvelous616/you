@@ -1,0 +1,25 @@
+# Keep every text file LF in the repository and in a Linux checkout.
+* text=auto
+
+# Shell scripts and deployment units are Linux-only; force LF regardless of the
+# local core.autocrlf setting so a Windows checkout cannot break them.
+*.sh text eol=lf
+*.service text eol=lf
+*.timer text eol=lf
+deploy/** text eol=lf
+
+# Windows helper scripts keep CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.sqlite binary
+*.db binary

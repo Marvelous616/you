@@ -60,4 +60,22 @@ describe('Android Mobile Offline Capture & Sync (Spike A)', () => {
     const pendingCount = await storage.getPendingCount();
     expect(pendingCount).toBe(1);
   });
+
+  it('lets the user change the server address and API key at runtime', () => {
+    const client = new MobileSyncClient(storage, {
+      serverUrl: 'http://old-host:4000',
+      clientId: 'android-phone-test',
+    });
+
+    expect(client.getApiKey()).toBe('');
+
+    client.setServerUrl('https://server.tailnet.ts.net');
+    client.setApiKey('test-connection-key');
+
+    expect(client.getServerUrl()).toBe('https://server.tailnet.ts.net');
+    expect(client.getApiKey()).toBe('test-connection-key');
+
+    client.setApiKey('');
+    expect(client.getApiKey()).toBe('');
+  });
 });

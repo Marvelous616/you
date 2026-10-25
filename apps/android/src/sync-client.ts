@@ -19,6 +19,21 @@ export class MobileSyncClient {
     private readonly config: SyncConfig
   ) {}
 
+  getServerUrl(): string {
+    return this.config.serverUrl;
+  }
+
+  setServerUrl(serverUrl: string): void {
+    this.config.serverUrl = serverUrl;
+  }
+
+  getApiKey(): string {
+    return this.config.apiKey ?? '';
+  }
+
+  setApiKey(apiKey: string | undefined): void {
+    this.config.apiKey = apiKey && apiKey.length > 0 ? apiKey : undefined;
+  }
   async syncNow(): Promise<{ syncedCount: number; appliedCount: number; error?: string }> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',

@@ -1,6 +1,9 @@
-import Fastify, { FastifyInstance } from 'fastify';
+import Fastify, { FastifyInstance, FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import * as path from 'node:path';
 import {
   DatabaseSync,
   SqliteCalendarItemRepository,
@@ -27,6 +30,7 @@ import {
   PushSyncRequest,
   PushSyncResponse,
   PullSyncResponse,
+  SYNC_PROTOCOL_VERSION,
   SyncRecordPayload,
 } from '@life-logger/sync';
 import {
@@ -63,6 +67,23 @@ import {
 export interface AppOptions {
   db: DatabaseSync;
   apiKey?: string;
+  /** Release version reported by /health and the web footer. */
+  version?: string;
+  /** Built web app directory. Static serving is skipped when it is absent. */
+  webDir?: string;
+  logger?: FastifyServerOptions['logger'];
+}
+
+/** Reads the applied migration number once so /health never scans tables. */
+export function readSchemaVersion(db: DatabaseSync): number {
+  try {
+    const row = db
+      .prepare('SELECT MAX(version) AS version FROM schema_migrations')
+      .get() as { version: number | null } | undefined;
+    return row?.version ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 interface CreateEventBody {
@@ -135,6 +156,9 @@ export function buildApp(options: AppOptions): FastifyInstance {
   const { db, apiKey } = options;
   runMigrations(db);
 
+  const appVersion = options.version ?? '0.0.0-dev';
+  const schemaVersion = readSchemaVersion(db);
+
   const markerRepo: IMarkerRepository = new SqliteMarkerRepository(db);
   const dayRepo: IDayRepository = new SqliteDayRepository(db);
   const eventRepo: IEventRepository = new SqliteEventRepository(db);
@@ -146,13 +170,14 @@ export function buildApp(options: AppOptions): FastifyInstance {
   const calendarItemRepo: ICalendarItemRepository = new SqliteCalendarItemRepository(db);
   const extensionRegistry = createDefaultExtensionRegistry();
 
-  const server = Fastify({ logger: false });
+  const server = Fastify({ logger: options.logger ?? false });
 
   server.register(cors, { origin: '*' });
 
   if (apiKey) {
     server.addHook('preHandler', async (request, reply) => {
-      if (request.url === '/health') return;
+      const urlPath = request.url.split('?')[0];
+      if (!urlPath.startsWith('/api/')) return;
 
       const authHeader = request.headers['authorization'];
       const apiKeyHeader = request.headers['x-api-key'];
@@ -200,12 +225,22 @@ export function buildApp(options: AppOptions): FastifyInstance {
     await captureRepo.save(capture);
   }
 
-  server.get('/health', async () => {
-    return {
-      status: 'ok',
+  server.get('/health', async (_request, reply) => {
+    const base = {
       timestamp: new Date().toISOString(),
-      database: 'connected',
+      version: appVersion,
+      schemaVersion,
+      syncProtocolVersion: SYNC_PROTOCOL_VERSION,
     };
+
+    try {
+      // A direct connection probe only; never scans application tables.
+      db.prepare('SELECT 1').get();
+      return { status: 'ok', database: 'connected', ...base };
+    } catch {
+      reply.code(503);
+      return { status: 'error', database: 'unavailable', ...base };
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -1020,6 +1055,43 @@ export function buildApp(options: AppOptions): FastifyInstance {
       };
     }
   );
+
+  // ---------------------------------------------------------------------------
+  // Static web app
+  // ---------------------------------------------------------------------------
+
+  const webDir = options.webDir;
+  if (webDir && existsSync(webDir)) {
+    server.register(fastifyStatic, {
+      root: webDir,
+      prefix: '/',
+      setHeaders: (res, filePath) => {
+        const relative = path.relative(webDir, filePath);
+        if (relative === 'index.html') {
+          res.setHeader('Cache-Control', 'no-cache');
+        } else if (relative.startsWith(`assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else {
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    });
+
+    server.setNotFoundHandler(async (request, reply) => {
+      const urlPath = request.url.split('?')[0];
+      const isSpaRoute =
+        request.method === 'GET' &&
+        !urlPath.startsWith('/api/') &&
+        urlPath !== '/health' &&
+        path.extname(urlPath) === '';
+
+      if (isSpaRoute) {
+        return reply.type('text/html').sendFile('index.html');
+      }
+
+      return reply.code(404).send({ error: 'Not Found' });
+    });
+  }
 
   return server;
 }
