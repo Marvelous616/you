@@ -133,6 +133,44 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 3,
+    description: 'Suggestion inbox core table and Calendar extension table',
+    up: (db: DatabaseSync) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS suggestions (
+          id TEXT PRIMARY KEY,
+          source TEXT NOT NULL,
+          confidence REAL NOT NULL DEFAULT 1,
+          proposed_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          external_id TEXT,
+          accepted_event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+          reviewed_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS calendar_items (
+          event_id TEXT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+          external_id TEXT NOT NULL,
+          calendar_name TEXT,
+          recurrence_rule TEXT,
+          organizer TEXT,
+          attendees_json TEXT NOT NULL DEFAULT '[]',
+          imported_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_suggestions_status ON suggestions(status);
+        CREATE INDEX IF NOT EXISTS idx_suggestions_external ON suggestions(source, external_id);
+        CREATE INDEX IF NOT EXISTS idx_suggestions_updated_at ON suggestions(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_calendar_items_external ON calendar_items(external_id);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

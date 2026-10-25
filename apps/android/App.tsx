@@ -18,15 +18,23 @@ import {
   JournalEntry,
   Marker,
   Person,
+  Suggestion,
+  SuggestionOverrides,
   Tag,
   TimelineGap,
+  acceptSuggestion,
   buildEventFromQuickEntry,
+  buildEventFromSuggestion,
   calculateDayCoverage,
+  calendarEventsToSuggestions,
   completeDayReview,
   computeTimelineLanes,
+  editSuggestion,
   findTimelineGaps,
   getLocalDateString,
+  parseIcsCalendar,
   parseQuickEntry,
+  rejectSuggestion,
   resolvePeopleForEvent,
   resolveTagsForEvent,
   wakeDay,
@@ -53,6 +61,27 @@ function toTimeInput(iso?: string): string {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${hours}:${minutes}`;
+}
+
+function timeOnDate(iso: string, timeText: string): string | undefined {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(timeText.trim());
+  if (!match) return undefined;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return undefined;
+
+  const base = new Date(iso);
+  const candidate = new Date(
+    base.getFullYear(),
+    base.getMonth(),
+    base.getDate(),
+    hours,
+    minutes,
+    0,
+    0
+  );
+  return candidate.toISOString();
 }
 
 function parseSleepTime(value: string, day: Day, now: Date): string | undefined {
@@ -121,6 +150,16 @@ export default function App() {
   const [people, setPeople] = useState<Person[]>([]);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [markers, setMarkers] = useState<Marker[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+
+  const [icsText, setIcsText] = useState('');
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
+  const [suggestionBusyId, setSuggestionBusyId] = useState<string | null>(null);
+  const [editingSuggestionId, setEditingSuggestionId] = useState<string | null>(null);
+  const [suggestionTitleDraft, setSuggestionTitleDraft] = useState('');
+  const [suggestionStartDraft, setSuggestionStartDraft] = useState('');
+  const [suggestionEndDraft, setSuggestionEndDraft] = useState('');
 
   const [quickText, setQuickText] = useState('');
   const [noteText, setNoteText] = useState('');
@@ -152,13 +191,15 @@ export default function App() {
       await storage.saveDayAndEnqueueOutbox(current);
     }
 
-    const [dayEvents, allTags, allPeople, journal, markerList] = await Promise.all([
-      storage.getEventsForDay(current.id),
-      storage.getTags(),
-      storage.getPeople(),
-      storage.getJournalEntries(current.id),
-      storage.getMarkerList(),
-    ]);
+    const [dayEvents, allTags, allPeople, journal, markerList, pendingSuggestions] =
+      await Promise.all([
+        storage.getEventsForDay(current.id),
+        storage.getTags(),
+        storage.getPeople(),
+        storage.getJournalEntries(current.id),
+        storage.getMarkerList(),
+        storage.getPendingSuggestions(),
+      ]);
 
     setDay(current);
     setEvents(dayEvents);
@@ -166,6 +207,7 @@ export default function App() {
     setPeople(allPeople);
     setJournalEntries(journal);
     setMarkers(markerList.filter((marker) => !marker.dayId || marker.dayId === current.id));
+    setSuggestions(pendingSuggestions);
     await refreshOutbox();
   }, [refreshOutbox]);
 
@@ -305,9 +347,153 @@ export default function App() {
     if (res.error) {
       setSyncStatus(`Sync error: ${res.error}`);
     } else {
-      setSyncStatus(`Synced ${res.syncedCount} records`);
+      setSyncStatus(`Synced ${res.syncedCount}, pulled ${res.appliedCount}`);
     }
-    await refreshOutbox();
+    await loadDayData();
+  };
+
+  const handleImportIcs = async () => {
+    if (!icsText.trim()) return;
+    setSuggestionError(null);
+    setImportNotice(null);
+    try {
+      const parsed = parseIcsCalendar(icsText);
+      const candidates = calendarEventsToSuggestions(parsed.events);
+      const existing = await storage.getSuggestions();
+      const known = new Set(
+        existing
+          .filter((suggestion) => suggestion.source === 'calendar' && suggestion.externalId)
+          .map((suggestion) => suggestion.externalId as string)
+      );
+
+      let imported = 0;
+      for (const candidate of candidates) {
+        if (candidate.externalId && known.has(candidate.externalId)) continue;
+        await storage.saveSuggestionAndEnqueueOutbox(candidate);
+        imported++;
+      }
+
+      setIcsText('');
+      setImportNotice(
+        `Imported ${imported} ${imported === 1 ? 'suggestion' : 'suggestions'}. ` +
+          `${parsed.skipped.length} calendar entries skipped.`
+      );
+      await loadDayData();
+    } catch (err) {
+      setSuggestionError(err instanceof Error ? err.message : 'Calendar import failed');
+    }
+  };
+
+  const handleAcceptSuggestion = async (suggestion: Suggestion) => {
+    if (!day) return;
+    const now = new Date();
+    setSuggestionBusyId(suggestion.id);
+    setSuggestionError(null);
+    try {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const startAt = suggestion.proposed.startAt;
+      const eventDayId =
+        suggestion.proposed.dayId ?? `day-${getLocalDateString(new Date(startAt), timezone)}`;
+
+      if (!(await storage.getDay(eventDayId))) {
+        await storage.saveDayAndEnqueueOutbox(buildDay(new Date(startAt)));
+      }
+
+      const eventId = `event-phone-${Date.now()}`;
+      const { suggestion: accepted, proposed } = acceptSuggestion(suggestion, undefined, {
+        eventId,
+        dayId: eventDayId,
+        now,
+        source: 'imported',
+      });
+      const event = buildEventFromSuggestion(proposed, {
+        eventId,
+        dayId: eventDayId,
+        now,
+        source: 'imported',
+      });
+      const resolvedTags = resolveTagsForEvent(
+        event.id,
+        proposed.tagPaths ?? [],
+        tags,
+        { now }
+      );
+      const resolvedPeople = resolvePeopleForEvent(
+        event.id,
+        proposed.peopleNames ?? [],
+        people,
+        { now }
+      );
+
+      await storage.saveQuickEntryAndEnqueueOutbox({
+        event,
+        tags: resolvedTags.tags,
+        eventTags: resolvedTags.eventTags,
+        people: resolvedPeople.people,
+        participants: resolvedPeople.participants,
+      });
+      await storage.saveSuggestionAndEnqueueOutbox(accepted);
+
+      setEditingSuggestionId(null);
+      await loadDayData();
+    } catch (err) {
+      setSuggestionError(err instanceof Error ? err.message : 'Failed to accept suggestion');
+    } finally {
+      setSuggestionBusyId(null);
+    }
+  };
+
+  const handleRejectSuggestion = async (suggestion: Suggestion) => {
+    setSuggestionBusyId(suggestion.id);
+    setSuggestionError(null);
+    try {
+      const rejected = rejectSuggestion(suggestion, new Date());
+      await storage.saveSuggestionAndEnqueueOutbox(rejected);
+      setEditingSuggestionId(null);
+      await loadDayData();
+    } catch (err) {
+      setSuggestionError(err instanceof Error ? err.message : 'Failed to reject suggestion');
+    } finally {
+      setSuggestionBusyId(null);
+    }
+  };
+
+  const beginSuggestionEdit = (suggestion: Suggestion) => {
+    setEditingSuggestionId(suggestion.id);
+    setSuggestionTitleDraft(suggestion.proposed.title);
+    setSuggestionStartDraft(toTimeInput(suggestion.proposed.startAt));
+    setSuggestionEndDraft(toTimeInput(suggestion.proposed.endAt));
+    setSuggestionError(null);
+  };
+
+  const handleSaveSuggestionEdit = async (suggestion: Suggestion) => {
+    setSuggestionBusyId(suggestion.id);
+    setSuggestionError(null);
+    try {
+      const startAt =
+        timeOnDate(suggestion.proposed.startAt, suggestionStartDraft) ??
+        suggestion.proposed.startAt;
+      const endAt = suggestionEndDraft.trim()
+        ? timeOnDate(
+            suggestion.proposed.endAt ?? suggestion.proposed.startAt,
+            suggestionEndDraft
+          )
+        : null;
+
+      const overrides: SuggestionOverrides = {
+        title: suggestionTitleDraft,
+        startAt,
+        endAt,
+      };
+      const edited = editSuggestion(suggestion, overrides, new Date());
+      await storage.saveSuggestionAndEnqueueOutbox(edited);
+      setEditingSuggestionId(null);
+      await loadDayData();
+    } catch (err) {
+      setSuggestionError(err instanceof Error ? err.message : 'Failed to edit suggestion');
+    } finally {
+      setSuggestionBusyId(null);
+    }
   };
 
   const openReview = () => {
@@ -600,6 +786,134 @@ export default function App() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionHeader}>SUGGESTIONS ({suggestions.length})</Text>
+
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>IMPORT CALENDAR (.ICS)</Text>
+            <TextInput
+              style={[styles.input, styles.icsInput]}
+              placeholder="Paste calendar file contents here"
+              placeholderTextColor="#94a3b8"
+              value={icsText}
+              onChangeText={setIcsText}
+              multiline
+            />
+            <TouchableOpacity
+              style={[styles.quickButton, !icsText.trim() && styles.disabledButton]}
+              onPress={handleImportIcs}
+              disabled={!icsText.trim()}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.quickButtonText}>IMPORT ICS</Text>
+            </TouchableOpacity>
+            {importNotice && <Text style={styles.noticeText}>{importNotice}</Text>}
+            {suggestionError && <Text style={styles.suggestionError}>{suggestionError}</Text>}
+
+            {suggestions.length === 0 ? (
+              <Text style={styles.emptyText}>
+                No pending suggestions. Automated sources propose here, and only you add them to
+                the timeline.
+              </Text>
+            ) : (
+              suggestions.map((suggestion) => {
+                const busy = suggestionBusyId === suggestion.id;
+                const editing = editingSuggestionId === suggestion.id;
+                return (
+                  <View key={suggestion.id} style={styles.suggestionCard}>
+                    {editing ? (
+                      <>
+                        <TextInput
+                          style={styles.input}
+                          value={suggestionTitleDraft}
+                          onChangeText={setSuggestionTitleDraft}
+                          placeholder="Title"
+                          placeholderTextColor="#94a3b8"
+                        />
+                        <View style={styles.suggestionTimeRow}>
+                          <TextInput
+                            style={[styles.input, styles.suggestionTimeInput]}
+                            value={suggestionStartDraft}
+                            onChangeText={setSuggestionStartDraft}
+                            placeholder="Start HH:MM"
+                            placeholderTextColor="#94a3b8"
+                          />
+                          <TextInput
+                            style={[styles.input, styles.suggestionTimeInput]}
+                            value={suggestionEndDraft}
+                            onChangeText={setSuggestionEndDraft}
+                            placeholder="End HH:MM"
+                            placeholderTextColor="#94a3b8"
+                          />
+                        </View>
+                        <View style={styles.suggestionActions}>
+                          <TouchableOpacity
+                            style={styles.smallPrimary}
+                            onPress={() => handleSaveSuggestionEdit(suggestion)}
+                            disabled={busy}
+                          >
+                            <Text style={styles.smallPrimaryText}>
+                              {busy ? 'SAVING' : 'SAVE'}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.smallSecondary}
+                            onPress={() => setEditingSuggestionId(null)}
+                            disabled={busy}
+                          >
+                            <Text style={styles.smallSecondaryText}>CANCEL</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={styles.suggestionTitle}>{suggestion.proposed.title}</Text>
+                        <Text style={styles.suggestionMeta}>
+                          {formatClock(suggestion.proposed.startAt)}
+                          {suggestion.proposed.endAt
+                            ? `–${formatClock(suggestion.proposed.endAt)}`
+                            : ''}{' '}
+                          · {suggestion.source} · {Math.round(suggestion.confidence * 100)}%
+                        </Text>
+                        {suggestion.proposed.notes && (
+                          <Text style={styles.suggestionNotes} numberOfLines={3}>
+                            {suggestion.proposed.notes}
+                          </Text>
+                        )}
+                        <View style={styles.suggestionActions}>
+                          <TouchableOpacity
+                            style={styles.smallPrimary}
+                            onPress={() => handleAcceptSuggestion(suggestion)}
+                            disabled={busy}
+                          >
+                            <Text style={styles.smallPrimaryText}>
+                              {busy ? 'WORKING' : 'ACCEPT'}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.smallSecondary}
+                            onPress={() => beginSuggestionEdit(suggestion)}
+                            disabled={busy}
+                          >
+                            <Text style={styles.smallSecondaryText}>EDIT</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.smallSecondary}
+                            onPress={() => handleRejectSuggestion(suggestion)}
+                            disabled={busy}
+                          >
+                            <Text style={styles.smallSecondaryText}>REJECT</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionHeader}>JOURNAL</Text>
           {journalEntries.length === 0 ? (
             <Text style={styles.emptyText}>No journal entry yet. Write one during review.</Text>
@@ -873,6 +1187,83 @@ const styles = StyleSheet.create({
   suggestionText: {
     color: '#cbd5e1',
     fontSize: 11,
+    fontWeight: '600',
+  },
+  icsInput: {
+    minHeight: 84,
+    textAlignVertical: 'top',
+    marginBottom: 10,
+  },
+  noticeText: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    marginTop: 8,
+  },
+  suggestionError: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    marginTop: 8,
+  },
+  suggestionCard: {
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    padding: 12,
+    marginTop: 10,
+  },
+  suggestionTitle: {
+    color: '#f8fafc',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  suggestionMeta: {
+    color: '#94a3b8',
+    fontSize: 11,
+    marginTop: 3,
+    textTransform: 'capitalize',
+  },
+  suggestionNotes: {
+    color: '#94a3b8',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  suggestionActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  suggestionTimeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  suggestionTimeInput: {
+    flex: 1,
+  },
+  smallPrimary: {
+    backgroundColor: '#e2e8f0',
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  smallPrimaryText: {
+    color: '#0f172a',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  smallSecondary: {
+    backgroundColor: '#334155',
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  smallSecondaryText: {
+    color: '#e2e8f0',
+    fontSize: 12,
     fontWeight: '600',
   },
   quickButton: {

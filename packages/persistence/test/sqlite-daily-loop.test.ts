@@ -93,7 +93,7 @@ describe('Migration 2 and Daily Loop repositories', () => {
     const versions = legacy
       .prepare('SELECT version FROM schema_migrations ORDER BY version')
       .all() as Array<{ version: number }>;
-    expect(versions.map((row) => row.version)).toEqual([1, 2]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3]);
 
     const tables = legacy
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")

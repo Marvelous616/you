@@ -1,4 +1,5 @@
 import {
+  CalendarItem,
   Capture,
   Day,
   Event,
@@ -7,6 +8,8 @@ import {
   JournalEntry,
   Marker,
   Person,
+  Suggestion,
+  SuggestionStatus,
   Tag,
   UUID,
 } from '@life-logger/domain';
@@ -100,4 +103,21 @@ export interface ICaptureRepository {
   findById(id: UUID): Promise<Capture | null>;
   listAll(includeDeleted?: boolean): Promise<Capture[]>;
   listModifiedSince(cursor: string, limit?: number): Promise<CursorResult<Capture>>;
+}
+
+export interface ISuggestionRepository {
+  save(suggestion: Suggestion): Promise<void>;
+  saveBatch(suggestions: Suggestion[]): Promise<void>;
+  findById(id: UUID): Promise<Suggestion | null>;
+  findByExternalId(source: string, externalId: string): Promise<Suggestion | null>;
+  listByStatus(status: SuggestionStatus, includeDeleted?: boolean): Promise<Suggestion[]>;
+  listAll(includeDeleted?: boolean): Promise<Suggestion[]>;
+  listModifiedSince(cursor: string, limit?: number): Promise<CursorResult<Suggestion>>;
+}
+
+export interface ICalendarItemRepository {
+  save(item: CalendarItem): Promise<void>;
+  findByEventId(eventId: UUID): Promise<CalendarItem | null>;
+  findByExternalId(externalId: string): Promise<CalendarItem | null>;
+  listAll(): Promise<CalendarItem[]>;
 }

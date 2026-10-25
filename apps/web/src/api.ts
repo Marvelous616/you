@@ -7,6 +7,9 @@ import {
   JournalEntry,
   Marker,
   Person,
+  Suggestion,
+  SuggestionOverrides,
+  SuggestionStatus,
   Tag,
   TimelineGap,
 } from '@life-logger/domain';
@@ -124,6 +127,97 @@ export async function reviewDay(dayId: string, input: ReviewInput): Promise<Revi
     body: JSON.stringify(input),
   });
   return readJson<ReviewResult>(res, 'Failed to complete day review');
+}
+
+export interface AcceptSuggestionResult {
+  suggestion: Suggestion;
+  event: Event;
+  tags: Tag[];
+  eventTags: EventTag[];
+  people: Person[];
+  participants: EventParticipant[];
+}
+
+export interface CalendarImportResult {
+  extension: { id: string; name: string; version: string };
+  importedCount: number;
+  duplicateCount: number;
+  suggestions: Suggestion[];
+  duplicates: Array<{ externalId: string; suggestionId: string; status: SuggestionStatus }>;
+  skipped: Array<{ title?: string; reason: string }>;
+}
+
+export interface ExtensionInfo {
+  id: string;
+  name: string;
+  version: string;
+  tags: string[];
+  dimensions: string[];
+  tables: string[];
+}
+
+export async function fetchSuggestions(
+  status?: SuggestionStatus
+): Promise<Suggestion[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  const res = await fetch(`${API_BASE}/api/v1/suggestions${query}`);
+  return readJson<Suggestion[]>(res, 'Failed to fetch suggestions');
+}
+
+export async function editSuggestion(
+  suggestionId: string,
+  overrides: SuggestionOverrides
+): Promise<Suggestion> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/suggestions/${encodeURIComponent(suggestionId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(overrides),
+    }
+  );
+  return readJson<Suggestion>(res, 'Failed to edit suggestion');
+}
+
+export async function acceptSuggestion(
+  suggestionId: string,
+  overrides?: SuggestionOverrides
+): Promise<AcceptSuggestionResult> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/suggestions/${encodeURIComponent(suggestionId)}/accept`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(overrides ? { overrides } : {}),
+    }
+  );
+  return readJson<AcceptSuggestionResult>(res, 'Failed to accept suggestion');
+}
+
+export async function rejectSuggestion(suggestionId: string): Promise<Suggestion> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/suggestions/${encodeURIComponent(suggestionId)}/reject`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }
+  );
+  return readJson<Suggestion>(res, 'Failed to reject suggestion');
+}
+
+export async function fetchExtensions(): Promise<ExtensionInfo[]> {
+  const res = await fetch(`${API_BASE}/api/v1/extensions`);
+  return readJson<ExtensionInfo[]>(res, 'Failed to fetch extensions');
+}
+
+export async function importCalendarIcs(ics: string): Promise<CalendarImportResult> {
+  const res = await fetch(`${API_BASE}/api/v1/extensions/calendar/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ics }),
+  });
+  return readJson<CalendarImportResult>(res, 'Failed to import calendar');
 }
 
 export async function checkServerHealth(): Promise<boolean> {

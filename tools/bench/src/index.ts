@@ -4,8 +4,16 @@ import {
   SqliteMarkerRepository,
   SqliteDayRepository,
   SqliteEventRepository,
+  SqliteSuggestionRepository,
 } from '@life-logger/persistence';
-import { computeTimelineLanes, parseQuickEntry } from '@life-logger/domain';
+import {
+  acceptSuggestion,
+  buildEventFromSuggestion,
+  calendarEventsToSuggestions,
+  computeTimelineLanes,
+  parseIcsCalendar,
+  parseQuickEntry,
+} from '@life-logger/domain';
 import { generateEventDataset, generateSyntheticDataset } from './generator.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -27,9 +35,27 @@ function percentile(sortedSamples: number[], ratio: number): number {
   return sortedSamples[Math.min(sortedSamples.length - 1, Math.floor(sortedSamples.length * ratio))];
 }
 
+function generateIcsCalendar(count: number): string {
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Life Logger Bench//EN'];
+  for (let index = 0; index < count; index++) {
+    const day = String((index % 28) + 1).padStart(2, '0');
+    const hour = String(9 + (index % 8)).padStart(2, '0');
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:bench-event-${index}@example.com`,
+      `SUMMARY:Bench event ${index}`,
+      `DTSTART:202610${day}T${hour}0000Z`,
+      `DTEND:202610${day}T${hour}3000Z`,
+      'END:VEVENT'
+    );
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
 async function runBenchmark() {
   console.log('====================================================');
-  console.log('Running Life Logger Increment 2 Benchmark Suite');
+  console.log('Running Life Logger Increment 3 Benchmark Suite');
   console.log('====================================================');
 
   const db = new DatabaseSync(':memory:');
@@ -38,6 +64,7 @@ async function runBenchmark() {
   const markerRepo = new SqliteMarkerRepository(db);
   const dayRepo = new SqliteDayRepository(db);
   const eventRepo = new SqliteEventRepository(db);
+  const suggestionRepo = new SqliteSuggestionRepository(db);
 
   const datasetSize = 5000;
   console.log(`Generating synthetic dataset with ${datasetSize} markers...`);
@@ -133,6 +160,100 @@ async function runBenchmark() {
   );
   console.log(`[Metric 6] 50-Event Lane Layout (p95): ${p95LaneMs.toFixed(3)} ms`);
 
+  // 7. Calendar (ICS) parse latency for a 200-event file (Target: < 50ms)
+  const icsText = generateIcsCalendar(200);
+  const icsSamples: number[] = [];
+  let parsedEvents = parseIcsCalendar(icsText).events;
+  for (let i = 0; i < 50; i++) {
+    const icsStart = performance.now();
+    const parsed = parseIcsCalendar(icsText);
+    icsSamples.push(performance.now() - icsStart);
+    parsedEvents = parsed.events;
+  }
+  const avgIcsParseMs = icsSamples.reduce((a, b) => a + b, 0) / icsSamples.length;
+  console.log(
+    `[Metric 7] ICS Parse (200 events): ${avgIcsParseMs.toFixed(3)} ms (Target: < 50 ms)`
+  );
+
+  // 8. Calendar event to deterministic suggestion conversion (Target: < 25ms)
+  const suggestionNow = new Date('2026-10-14T08:00:00.000Z');
+  const buildSamples: number[] = [];
+  let calendarSuggestions = calendarEventsToSuggestions(parsedEvents, { now: suggestionNow });
+  for (let i = 0; i < 50; i++) {
+    const buildStart = performance.now();
+    calendarSuggestions = calendarEventsToSuggestions(parsedEvents, { now: suggestionNow });
+    buildSamples.push(performance.now() - buildStart);
+  }
+  const avgSuggestionBuildMs =
+    buildSamples.reduce((a, b) => a + b, 0) / buildSamples.length;
+  console.log(
+    `[Metric 8] Calendar Suggestion Build (200 events): ${avgSuggestionBuildMs.toFixed(
+      3
+    )} ms (Target: < 25 ms)`
+  );
+
+  // 9. Suggestion inbox write latency (Target: < 15ms)
+  const suggestionSaveSamples: number[] = [];
+  for (const suggestion of calendarSuggestions) {
+    const saveStart = performance.now();
+    await suggestionRepo.save(suggestion);
+    suggestionSaveSamples.push(performance.now() - saveStart);
+  }
+  const avgSuggestionSaveMs =
+    suggestionSaveSamples.reduce((a, b) => a + b, 0) / suggestionSaveSamples.length;
+  console.log(
+    `[Metric 9] Suggestion Save (Avg): ${avgSuggestionSaveMs.toFixed(3)} ms (Target: < 15 ms)`
+  );
+
+  // 10. Pending suggestion inbox query (Target: < 15ms)
+  const listSamples: number[] = [];
+  for (let i = 0; i < 50; i++) {
+    const listStart = performance.now();
+    await suggestionRepo.listByStatus('pending');
+    listSamples.push(performance.now() - listStart);
+  }
+  const avgSuggestionListMs = listSamples.reduce((a, b) => a + b, 0) / listSamples.length;
+  console.log(
+    `[Metric 10] Pending Suggestion Query (Avg): ${avgSuggestionListMs.toFixed(
+      3
+    )} ms (Target: < 15 ms)`
+  );
+
+  // 11. Accept flow: suggestion update plus imported event write (Target: < 25ms)
+  const acceptSamples: number[] = [];
+  const pendingSuggestions = await suggestionRepo.listByStatus('pending');
+  for (let i = 0; i < 50 && i < pendingSuggestions.length; i++) {
+    const suggestion = pendingSuggestions[i];
+    const acceptStart = performance.now();
+    const acceptedAt = new Date(
+      Math.max(
+        suggestionNow.getTime(),
+        new Date(suggestion.updatedAt).getTime()
+      ) + i + 1
+    );
+    const accepted = acceptSuggestion(suggestion, undefined, {
+      eventId: `bench-accepted-${i}`,
+      dayId: targetDayId,
+      now: acceptedAt,
+      source: 'imported',
+    });
+    const acceptedEvent = buildEventFromSuggestion(accepted.proposed, {
+      eventId: `bench-accepted-${i}`,
+      dayId: targetDayId,
+      now: acceptedAt,
+      source: 'imported',
+    });
+    await eventRepo.save(acceptedEvent);
+    await suggestionRepo.save(accepted.suggestion);
+    acceptSamples.push(performance.now() - acceptStart);
+  }
+  const avgAcceptFlowMs = acceptSamples.reduce((a, b) => a + b, 0) / acceptSamples.length;
+  console.log(
+    `[Metric 11] Suggestion Accept Flow (Avg): ${avgAcceptFlowMs.toFixed(
+      3
+    )} ms (Target: < 25 ms)`
+  );
+
   const results = {
     timestamp: new Date().toISOString(),
     environment: {
@@ -150,6 +271,11 @@ async function runBenchmark() {
       singleEventSaveAvgMs: avgEventSaveMs,
       timelineLanes50EventsAvgMs: avgLaneMs,
       timelineLanes50EventsP95Ms: p95LaneMs,
+      icsParse200EventsAvgMs: avgIcsParseMs,
+      calendarSuggestionBuild200EventsAvgMs: avgSuggestionBuildMs,
+      singleSuggestionSaveAvgMs: avgSuggestionSaveMs,
+      pendingSuggestionQueryAvgMs: avgSuggestionListMs,
+      suggestionAcceptFlowAvgMs: avgAcceptFlowMs,
     },
     passedTargets: {
       singleMarkerSave: avgSingleSaveMs < 50,
@@ -158,6 +284,11 @@ async function runBenchmark() {
       quickEntryParse: avgParseMs < 2,
       singleEventSave: avgEventSaveMs < 15,
       timelineLanes50Events: avgLaneMs < 30,
+      icsParse200Events: avgIcsParseMs < 50,
+      calendarSuggestionBuild200Events: avgSuggestionBuildMs < 25,
+      singleSuggestionSave: avgSuggestionSaveMs < 15,
+      pendingSuggestionQuery: avgSuggestionListMs < 15,
+      suggestionAcceptFlow: avgAcceptFlowMs < 25,
     },
   };
 
@@ -166,7 +297,7 @@ async function runBenchmark() {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  const outputPath = path.join(outputDir, 'increment-2-baseline.json');
+  const outputPath = path.join(outputDir, 'increment-3-baseline.json');
   fs.writeFileSync(outputPath, JSON.stringify(results, null, 2), 'utf8');
   console.log(`\nBenchmark metrics successfully recorded to ${outputPath}`);
 

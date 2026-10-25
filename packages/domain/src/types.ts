@@ -101,6 +101,61 @@ export interface Capture extends EntityMetadata {
 }
 
 /**
+ * A machine-proposed event awaiting accept, edit or reject. Automated sources
+ * (calendar, call log, GPS, imports) write Suggestions and never Events.
+ */
+export type SuggestionSource =
+  | 'calendar'
+  | 'call'
+  | 'gps'
+  | 'screen_time'
+  | 'browser'
+  | 'git'
+  | 'routine'
+  | 'manual';
+
+export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
+
+export interface ProposedEvent {
+  dayId?: UUID;
+  title: string;
+  startAt: ISODateTimeString;
+  endAt?: ISODateTimeString;
+  startPrecision: Precision;
+  endPrecision: Precision;
+  tagPaths?: string[];
+  peopleNames?: string[];
+  notes?: string;
+}
+
+export interface Suggestion extends EntityMetadata {
+  source: SuggestionSource;
+  /** 0..1 confidence supplied by the proposing extension. */
+  confidence: number;
+  proposed: ProposedEvent;
+  status: SuggestionStatus;
+  /** Stable identifier from the source system, used to avoid re-proposing. */
+  externalId?: string;
+  /** Event created when the suggestion was accepted. */
+  acceptedEventId?: UUID;
+  reviewedAt?: ISODateTimeString;
+}
+
+/**
+ * Module-owned calendar metadata, stored by reference to the accepted Event.
+ * This table is owned by the Calendar extension and is not part of the core.
+ */
+export interface CalendarItem {
+  eventId: UUID;
+  externalId: string;
+  calendarName?: string;
+  recurrenceRule?: string;
+  organizer?: string;
+  attendees: string[];
+  importedAt: ISODateTimeString;
+}
+
+/**
  * Generic state-of-mind / context sample. Dimensions are strings so new
  * dimensions require no schema migration.
  */

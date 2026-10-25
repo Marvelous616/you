@@ -7,7 +7,8 @@ export type EntitySyncType =
   | 'person'
   | 'event_participant'
   | 'journal_entry'
-  | 'capture';
+  | 'capture'
+  | 'suggestion';
 
 export const ENTITY_SYNC_TYPES: readonly EntitySyncType[] = [
   'marker',
@@ -19,6 +20,7 @@ export const ENTITY_SYNC_TYPES: readonly EntitySyncType[] = [
   'event_participant',
   'journal_entry',
   'capture',
+  'suggestion',
 ];
 
 export interface SyncRecordPayload<T = unknown> {

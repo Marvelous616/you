@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-10-25T14:19:49.038Z",
+  "environment": {
+    "nodeVersion": "v24.19.0",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "metrics": {
+    "singleMarkerSaveAvgMs": 0.033996000000000776,
+    "singleMarkerSaveP95Ms": 0.051400000000001,
+    "batchIngest5000RecordsMs": 183.09910000000002,
+    "dayTimelineQueryAvgMs": 0.2695780000000036,
+    "quickEntryParseAvgMs": 0.012685049999999962,
+    "quickEntryParseP95Ms": 0.01490000000001146,
+    "singleEventSaveAvgMs": 0.05403400000000261,
+    "timelineLanes50EventsAvgMs": 0.07364050000000048,
+    "timelineLanes50EventsP95Ms": 0.11219999999997299,
+    "icsParse200EventsAvgMs": 1.4565820000000007,
+    "calendarSuggestionBuild200EventsAvgMs": 0.6901180000000022,
+    "singleSuggestionSaveAvgMs": 0.035565499999997884,
+    "pendingSuggestionQueryAvgMs": 0.8294720000000007,
+    "suggestionAcceptFlowAvgMs": 0.09831200000000877
+  },
+  "passedTargets": {
+    "singleMarkerSave": true,
+    "batchIngest": true,
+    "dayTimelineQuery": true,
+    "quickEntryParse": true,
+    "singleEventSave": true,
+    "timelineLanes50Events": true,
+    "icsParse200Events": true,
+    "calendarSuggestionBuild200Events": true,
+    "singleSuggestionSave": true,
+    "pendingSuggestionQuery": true,
+    "suggestionAcceptFlow": true
+  }
+}

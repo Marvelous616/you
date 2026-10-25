@@ -6,12 +6,16 @@ import {
   JournalEntry,
   Marker,
   Person,
+  Suggestion,
+  SuggestionOverrides,
   Tag,
   TimelineGap,
   computeTimelineLanes,
   parseQuickEntry,
 } from '@life-logger/domain';
 import { MarkerItem } from './MarkerItem.js';
+import { SuggestionInbox } from './SuggestionInbox.js';
+import type { CalendarImportResult } from '../api.js';
 
 interface TimelineProps {
   day: Day | null;
@@ -22,12 +26,20 @@ interface TimelineProps {
   tags: Tag[];
   people: Person[];
   gaps: TimelineGap[];
+  suggestions: Suggestion[];
   coverage: number;
   isLoading: boolean;
   onRefresh: () => void;
   onWake: () => Promise<void>;
   onQuickEntry: (text: string) => Promise<void>;
   onOpenReview: () => void;
+  onAcceptSuggestion: (suggestionId: string) => Promise<void>;
+  onRejectSuggestion: (suggestionId: string) => Promise<void>;
+  onEditSuggestion: (
+    suggestionId: string,
+    overrides: SuggestionOverrides
+  ) => Promise<void>;
+  onImportCalendar: (ics: string) => Promise<CalendarImportResult>;
 }
 
 function formatClock(iso?: string): string {
@@ -53,12 +65,17 @@ export const Timeline: React.FC<TimelineProps> = ({
   tags,
   people,
   gaps,
+  suggestions,
   coverage,
   isLoading,
   onRefresh,
   onWake,
   onQuickEntry,
   onOpenReview,
+  onAcceptSuggestion,
+  onRejectSuggestion,
+  onEditSuggestion,
+  onImportCalendar,
 }) => {
   const [quickText, setQuickText] = useState('');
   const [quickError, setQuickError] = useState<string | null>(null);
@@ -313,6 +330,15 @@ export const Timeline: React.FC<TimelineProps> = ({
         )}
         {quickError && <div style={styles.quickError}>{quickError}</div>}
       </section>
+
+      <SuggestionInbox
+        suggestions={suggestions}
+        isLoading={isLoading}
+        onAccept={onAcceptSuggestion}
+        onReject={onRejectSuggestion}
+        onEdit={onEditSuggestion}
+        onImportCalendar={onImportCalendar}
+      />
 
       <div style={styles.columns}>
         <section style={styles.column}>

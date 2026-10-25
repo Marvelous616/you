@@ -7,9 +7,10 @@ import {
   JournalEntry,
   Marker,
   Person,
+  Suggestion,
   Tag,
 } from '@life-logger/domain';
-import { OutboxItem, createOutboxItem } from '@life-logger/sync';
+import { OutboxItem, SyncRecordPayload, createOutboxItem } from '@life-logger/sync';
 
 export interface QuickEntrySaveInput {
   event: Event;
@@ -25,6 +26,7 @@ export interface MobileStorage {
   saveQuickEntryAndEnqueueOutbox(input: QuickEntrySaveInput): Promise<{ saveDurationMs: number }>;
   saveDayAndEnqueueOutbox(day: Day): Promise<{ saveDurationMs: number }>;
   saveJournalAndEnqueueOutbox(entry: JournalEntry): Promise<{ saveDurationMs: number }>;
+  saveSuggestionAndEnqueueOutbox(suggestion: Suggestion): Promise<{ saveDurationMs: number }>;
   getMarkerList(): Promise<Marker[]>;
   getEventsForDay(dayId: string): Promise<Event[]>;
   getEventTagsForDay(dayId: string): Promise<EventTag[]>;
@@ -33,6 +35,9 @@ export interface MobileStorage {
   getPeople(): Promise<Person[]>;
   getJournalEntries(dayId: string): Promise<JournalEntry[]>;
   getDay(dayId: string): Promise<Day | null>;
+  getSuggestions(): Promise<Suggestion[]>;
+  getPendingSuggestions(): Promise<Suggestion[]>;
+  applyRemoteRecords(records: SyncRecordPayload[]): Promise<number>;
   getPendingOutboxItems(): Promise<OutboxItem[]>;
   markOutboxItemsSynced(itemIds: string[]): Promise<void>;
   getPendingCount(): Promise<number>;
@@ -54,6 +59,7 @@ export class InMemoryMobileStorage implements MobileStorage {
   private people: Map<string, Person> = new Map();
   private journalEntries: Map<string, JournalEntry> = new Map();
   private captures: Map<string, Capture> = new Map();
+  private suggestions: Map<string, Suggestion> = new Map();
   private outbox: Map<string, OutboxItem> = new Map();
 
   private enqueue<T>(
@@ -144,6 +150,21 @@ export class InMemoryMobileStorage implements MobileStorage {
     return { saveDurationMs: performance.now() - start };
   }
 
+  async saveSuggestionAndEnqueueOutbox(
+    suggestion: Suggestion
+  ): Promise<{ saveDurationMs: number }> {
+    const start = performance.now();
+    this.suggestions.set(suggestion.id, suggestion);
+    this.enqueue(
+      'suggestion',
+      suggestion.id,
+      suggestion,
+      suggestion.updatedAt,
+      suggestion.isDeleted
+    );
+    return { saveDurationMs: performance.now() - start };
+  }
+
   async getMarkerList(): Promise<Marker[]> {
     return Array.from(this.markers.values()).sort((a, b) => b.markedAt.localeCompare(a.markedAt));
   }
@@ -182,6 +203,32 @@ export class InMemoryMobileStorage implements MobileStorage {
 
   async getDay(dayId: string): Promise<Day | null> {
     return this.days.get(dayId) ?? null;
+  }
+
+  async getSuggestions(): Promise<Suggestion[]> {
+    return Array.from(this.suggestions.values())
+      .filter((suggestion) => !suggestion.isDeleted)
+      .sort((a, b) => a.proposed.startAt.localeCompare(b.proposed.startAt));
+  }
+
+  async getPendingSuggestions(): Promise<Suggestion[]> {
+    return (await this.getSuggestions()).filter((suggestion) => suggestion.status === 'pending');
+  }
+
+  async applyRemoteRecords(records: SyncRecordPayload[]): Promise<number> {
+    let applied = 0;
+    for (const record of records) {
+      if (record.entityType !== 'suggestion') continue;
+      const remote = record.data as Suggestion;
+      if (!remote || typeof remote.id !== 'string') continue;
+
+      const local = this.suggestions.get(remote.id);
+      if (local && local.updatedAt > remote.updatedAt) continue;
+
+      this.suggestions.set(remote.id, remote);
+      applied++;
+    }
+    return applied;
   }
 
   async getPendingOutboxItems(): Promise<OutboxItem[]> {

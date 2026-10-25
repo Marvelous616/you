@@ -1,12 +1,23 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { TimelineGap, parseQuickEntry } from '@life-logger/domain';
 import {
+  Suggestion,
+  SuggestionOverrides,
+  TimelineGap,
+  parseQuickEntry,
+} from '@life-logger/domain';
+import {
+  CalendarImportResult,
   DayTimeline,
   ReviewInput,
   ReviewResult,
+  acceptSuggestion,
   createEvent,
+  editSuggestion,
   fetchActiveDay,
   fetchDayTimeline,
+  fetchSuggestions,
+  importCalendarIcs,
+  rejectSuggestion,
   reviewDay,
   updateDay,
 } from './api.js';
@@ -23,6 +34,7 @@ function newId(prefix: string): string {
 
 export const App: React.FC = () => {
   const [timeline, setTimeline] = useState<DayTimeline | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState<boolean>(false);
@@ -33,8 +45,12 @@ export const App: React.FC = () => {
       setError(null);
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const activeDay = await fetchActiveDay(timezone);
-      const dayTimeline = await fetchDayTimeline(activeDay.id);
+      const [dayTimeline, pendingSuggestions] = await Promise.all([
+        fetchDayTimeline(activeDay.id),
+        fetchSuggestions('pending'),
+      ]);
       setTimeline(dayTimeline);
+      setSuggestions(pendingSuggestions);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -126,6 +142,39 @@ export const App: React.FC = () => {
     [timeline]
   );
 
+  const handleAcceptSuggestion = useCallback(
+    async (suggestionId: string) => {
+      await acceptSuggestion(suggestionId);
+      await loadData();
+    },
+    [loadData]
+  );
+
+  const handleRejectSuggestion = useCallback(
+    async (suggestionId: string) => {
+      await rejectSuggestion(suggestionId);
+      await loadData();
+    },
+    [loadData]
+  );
+
+  const handleEditSuggestion = useCallback(
+    async (suggestionId: string, overrides: SuggestionOverrides) => {
+      await editSuggestion(suggestionId, overrides);
+      await loadData();
+    },
+    [loadData]
+  );
+
+  const handleImportCalendar = useCallback(
+    async (ics: string): Promise<CalendarImportResult> => {
+      const result = await importCalendarIcs(ics);
+      await loadData();
+      return result;
+    },
+    [loadData]
+  );
+
   const handleCompleteReview = useCallback(
     async (input: ReviewInput): Promise<ReviewResult> => {
       if (!timeline) throw new Error('No day loaded');
@@ -153,12 +202,17 @@ export const App: React.FC = () => {
         journalEntries={timeline?.journalEntries ?? []}
         people={timeline?.people ?? []}
         gaps={timeline?.gaps ?? []}
+        suggestions={suggestions}
         coverage={timeline?.coverage ?? 0}
         isLoading={isLoading}
         onRefresh={loadData}
         onWake={handleWake}
         onQuickEntry={handleQuickEntry}
         onOpenReview={() => setReviewOpen(true)}
+        onAcceptSuggestion={handleAcceptSuggestion}
+        onRejectSuggestion={handleRejectSuggestion}
+        onEditSuggestion={handleEditSuggestion}
+        onImportCalendar={handleImportCalendar}
       />
       {reviewOpen && timeline && (
         <ReviewModal

@@ -3,19 +3,23 @@ import cors from '@fastify/cors';
 import { randomUUID } from 'node:crypto';
 import {
   DatabaseSync,
+  SqliteCalendarItemRepository,
   SqliteCaptureRepository,
   SqliteDayRepository,
   SqliteEventRepository,
   SqliteJournalRepository,
   SqliteMarkerRepository,
   SqlitePersonRepository,
+  SqliteSuggestionRepository,
   SqliteTagRepository,
+  ICalendarItemRepository,
   ICaptureRepository,
   IDayRepository,
   IEventRepository,
   IJournalRepository,
   IMarkerRepository,
   IPersonRepository,
+  ISuggestionRepository,
   ITagRepository,
   runMigrations,
 } from '@life-logger/persistence';
@@ -26,7 +30,9 @@ import {
   SyncRecordPayload,
 } from '@life-logger/sync';
 import {
+  CALENDAR_EXTENSION,
   Capture,
+  CalendarItem,
   Day,
   Event,
   EventParticipant,
@@ -34,11 +40,21 @@ import {
   JournalEntry,
   Marker,
   Person,
+  Suggestion,
+  SuggestionOverrides,
+  SuggestionStatus,
   Tag,
+  acceptSuggestion,
+  buildEventFromSuggestion,
   calculateDayCoverage,
   calculateDayFidelity,
+  calendarEventsToSuggestions,
+  createDefaultExtensionRegistry,
+  editSuggestion,
   findTimelineGaps,
   getLocalDateString,
+  parseIcsCalendar,
+  rejectSuggestion,
   resolveLogicalDay,
   resolvePeopleForEvent,
   resolveTagsForEvent,
@@ -77,6 +93,19 @@ interface DayPatchBody {
   timezone?: string;
 }
 
+interface AcceptSuggestionBody {
+  overrides?: SuggestionOverrides;
+  eventId?: string;
+  dayId?: string;
+  now?: string;
+}
+
+interface EditSuggestionBody extends SuggestionOverrides {}
+
+interface CalendarImportBody {
+  ics: string;
+}
+
 function normalizeRecord<T extends object>(record: SyncRecordPayload, forceId?: string): T {
   const data = record.data;
   if (!data || typeof data !== 'object') {
@@ -92,6 +121,16 @@ function isLocalDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+/**
+ * Keeps mutation timestamps monotonic so a client clock that lags the record's
+ * last write cannot make an accept/reject/edit lose last-write-wins.
+ */
+function resolveUpdateTime(requested: Date, recordUpdatedAt: string): Date {
+  const recordTime = new Date(recordUpdatedAt).getTime();
+  if (Number.isNaN(recordTime)) return requested;
+  return requested.getTime() > recordTime ? requested : new Date(recordTime + 1);
+}
+
 export function buildApp(options: AppOptions): FastifyInstance {
   const { db, apiKey } = options;
   runMigrations(db);
@@ -103,6 +142,9 @@ export function buildApp(options: AppOptions): FastifyInstance {
   const personRepo: IPersonRepository = new SqlitePersonRepository(db);
   const journalRepo: IJournalRepository = new SqliteJournalRepository(db);
   const captureRepo: ICaptureRepository = new SqliteCaptureRepository(db);
+  const suggestionRepo: ISuggestionRepository = new SqliteSuggestionRepository(db);
+  const calendarItemRepo: ICalendarItemRepository = new SqliteCalendarItemRepository(db);
+  const extensionRegistry = createDefaultExtensionRegistry();
 
   const server = Fastify({ logger: false });
 
@@ -244,6 +286,38 @@ export function buildApp(options: AppOptions): FastifyInstance {
               }
               break;
             }
+            case 'suggestion': {
+              const suggestion = normalizeRecord<Suggestion>(record);
+              if (
+                suggestion.acceptedEventId &&
+                !(await eventRepo.findById(suggestion.acceptedEventId))
+              ) {
+                suggestion.acceptedEventId = undefined;
+              }
+              await suggestionRepo.save(suggestion);
+
+              // An accept performed offline on a client still owns the calendar
+              // metadata for the imported event, so record it when it arrives.
+              if (
+                suggestion.status === 'accepted' &&
+                suggestion.source === 'calendar' &&
+                suggestion.externalId &&
+                suggestion.acceptedEventId
+              ) {
+                const existingItem = await calendarItemRepo.findByEventId(
+                  suggestion.acceptedEventId
+                );
+                if (!existingItem) {
+                  await calendarItemRepo.save({
+                    eventId: suggestion.acceptedEventId,
+                    externalId: suggestion.externalId,
+                    attendees: [],
+                    importedAt: suggestion.reviewedAt ?? suggestion.updatedAt,
+                  });
+                }
+              }
+              break;
+            }
             default: {
               rejected.push({
                 entityId: record.entityId,
@@ -291,6 +365,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
         captureDelta,
         eventTagDelta,
         participantDelta,
+        suggestionDelta,
       ] = await Promise.all([
         markerRepo.listModifiedSince(cursor, limit),
         dayRepo.listModifiedSince(cursor, limit),
@@ -309,6 +384,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
         captureRepo.listModifiedSince(cursor, limit),
         tagRepo.listEventTagsModifiedSince(cursor, limit),
         personRepo.listParticipantsModifiedSince(cursor, limit),
+        suggestionRepo.listModifiedSince(cursor, limit),
       ]);
 
       const records: SyncRecordPayload[] = [
@@ -331,6 +407,9 @@ export function buildApp(options: AppOptions): FastifyInstance {
             participant,
             updatedAt
           )
+        ),
+        ...suggestionDelta.records.map((suggestion) =>
+          toRecord('suggestion', suggestion.id, suggestion)
         ),
       ];
 
@@ -705,6 +784,242 @@ export function buildApp(options: AppOptions): FastifyInstance {
     await persistCapture(capture);
     return capture;
   });
+
+  // ---------------------------------------------------------------------------
+  // Suggestion inbox
+  // ---------------------------------------------------------------------------
+
+  server.get<{ Querystring: { status?: string; includeDeleted?: string } }>(
+    '/api/v1/suggestions',
+    async (request, reply) => {
+      const includeDeleted = request.query.includeDeleted === 'true';
+      const status = request.query.status;
+
+      if (status) {
+        if (status !== 'pending' && status !== 'accepted' && status !== 'rejected') {
+          reply.code(400).send({ error: `Invalid suggestion status: ${status}` });
+          return;
+        }
+        return suggestionRepo.listByStatus(status as SuggestionStatus, includeDeleted);
+      }
+
+      return suggestionRepo.listAll(includeDeleted);
+    }
+  );
+
+  server.patch<{ Params: { suggestionId: string }; Body: EditSuggestionBody }>(
+    '/api/v1/suggestions/:suggestionId',
+    async (request, reply) => {
+      const suggestion = await suggestionRepo.findById(request.params.suggestionId);
+      if (!suggestion || suggestion.isDeleted) {
+        reply.code(404).send({ error: 'Suggestion not found' });
+        return;
+      }
+
+      try {
+        const now = resolveUpdateTime(new Date(), suggestion.updatedAt);
+        const edited = editSuggestion(suggestion, request.body ?? {}, now);
+        await suggestionRepo.save(edited);
+        return edited;
+      } catch (err) {
+        reply.code(400).send({ error: String(err) });
+        return;
+      }
+    }
+  );
+
+  server.post<{ Params: { suggestionId: string }; Body: AcceptSuggestionBody }>(
+    '/api/v1/suggestions/:suggestionId/accept',
+    async (request, reply) => {
+      const suggestion = await suggestionRepo.findById(request.params.suggestionId);
+      if (!suggestion || suggestion.isDeleted) {
+        reply.code(404).send({ error: 'Suggestion not found' });
+        return;
+      }
+      if (suggestion.status !== 'pending') {
+        reply.code(409).send({ error: `Suggestion is already ${suggestion.status}` });
+        return;
+      }
+
+      const body = request.body ?? {};
+      const requestedNow = body.now ? new Date(body.now) : new Date();
+      if (Number.isNaN(requestedNow.getTime())) {
+        reply.code(400).send({ error: `Invalid now: ${body.now}` });
+        return;
+      }
+      const now = resolveUpdateTime(requestedNow, suggestion.updatedAt);
+
+      const eventId = body.eventId ?? `event-${randomUUID()}`;
+      const finalStartAt = body.overrides?.startAt ?? suggestion.proposed.startAt;
+      let dayId =
+        body.dayId ??
+        suggestion.proposed.dayId ??
+        `day-${getLocalDateString(new Date(finalStartAt), 'UTC')}`;
+
+      let accepted: Suggestion;
+      try {
+        const result = acceptSuggestion(suggestion, body.overrides, {
+          eventId,
+          dayId,
+          now,
+          source: 'imported',
+        });
+        accepted = result.suggestion;
+      } catch (err) {
+        reply.code(400).send({ error: String(err) });
+        return;
+      }
+
+      const event = buildEventFromSuggestion(accepted.proposed, {
+        eventId,
+        dayId,
+        now,
+        source: 'imported',
+      });
+
+      const existingTags = await tagRepo.listTree();
+      const existingPeople = await personRepo.listAll();
+      const resolvedTags = resolveTagsForEvent(
+        event.id,
+        accepted.proposed.tagPaths ?? [],
+        existingTags,
+        { now }
+      );
+      const resolvedPeople = resolvePeopleForEvent(
+        event.id,
+        accepted.proposed.peopleNames ?? [],
+        existingPeople,
+        { now }
+      );
+
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        dayId = await ensureDay(dayId, event.startAt);
+        event.dayId = dayId;
+
+        await eventRepo.save(event);
+        for (const tag of resolvedTags.tags) {
+          await tagRepo.save(tag);
+        }
+        await tagRepo.assignTagsToEvent(event.id, resolvedTags.eventTags);
+        for (const person of resolvedPeople.people) {
+          await personRepo.save(person);
+        }
+        for (const participant of resolvedPeople.participants) {
+          await personRepo.linkParticipant(participant);
+        }
+
+        await suggestionRepo.save(accepted);
+
+        if (accepted.source === 'calendar' && accepted.externalId) {
+          const item: CalendarItem = {
+            eventId: event.id,
+            externalId: accepted.externalId,
+            attendees: [],
+            importedAt: now.toISOString(),
+          };
+          await calendarItemRepo.save(item);
+        }
+
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        reply.code(500).send({ error: `Failed to accept suggestion: ${String(err)}` });
+        return;
+      }
+
+      return {
+        suggestion: accepted,
+        event,
+        tags: resolvedTags.tags,
+        eventTags: resolvedTags.eventTags,
+        people: resolvedPeople.people,
+        participants: resolvedPeople.participants,
+      };
+    }
+  );
+
+  server.post<{ Params: { suggestionId: string }; Body: { now?: string } }>(
+    '/api/v1/suggestions/:suggestionId/reject',
+    async (request, reply) => {
+      const suggestion = await suggestionRepo.findById(request.params.suggestionId);
+      if (!suggestion || suggestion.isDeleted) {
+        reply.code(404).send({ error: 'Suggestion not found' });
+        return;
+      }
+
+      const body = request.body ?? {};
+      const requestedNow = body.now ? new Date(body.now) : new Date();
+      if (Number.isNaN(requestedNow.getTime())) {
+        reply.code(400).send({ error: `Invalid now: ${body.now}` });
+        return;
+      }
+      const now = resolveUpdateTime(requestedNow, suggestion.updatedAt);
+
+      try {
+        const rejected = rejectSuggestion(suggestion, now);
+        await suggestionRepo.save(rejected);
+        return rejected;
+      } catch (err) {
+        reply.code(409).send({ error: String(err) });
+        return;
+      }
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // Extensions
+  // ---------------------------------------------------------------------------
+
+  server.get('/api/v1/extensions', async () => {
+    return extensionRegistry.list();
+  });
+
+  server.post<{ Body: CalendarImportBody }>(
+    '/api/v1/extensions/calendar/import',
+    async (request, reply) => {
+      const body = request.body;
+      if (!body || typeof body.ics !== 'string') {
+        reply.code(400).send({ error: 'ics is required' });
+        return;
+      }
+
+      const parsed = parseIcsCalendar(body.ics);
+      const candidates = calendarEventsToSuggestions(parsed.events);
+      const created: Suggestion[] = [];
+      const duplicates: Array<{ externalId: string; suggestionId: string; status: string }> = [];
+
+      for (const candidate of candidates) {
+        if (!candidate.externalId) {
+          created.push(candidate);
+          await suggestionRepo.save(candidate);
+          continue;
+        }
+
+        const existing = await suggestionRepo.findByExternalId('calendar', candidate.externalId);
+        if (existing) {
+          duplicates.push({
+            externalId: candidate.externalId,
+            suggestionId: existing.id,
+            status: existing.status,
+          });
+          continue;
+        }
+
+        await suggestionRepo.save(candidate);
+        created.push(candidate);
+      }
+
+      return {
+        extension: CALENDAR_EXTENSION,
+        importedCount: created.length,
+        duplicateCount: duplicates.length,
+        suggestions: created,
+        duplicates,
+        skipped: parsed.skipped,
+      };
+    }
+  );
 
   return server;
 }

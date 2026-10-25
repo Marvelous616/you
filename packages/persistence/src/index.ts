@@ -8,3 +8,5 @@ export * from './sqlite/tag-repository.js';
 export * from './sqlite/person-repository.js';
 export * from './sqlite/journal-repository.js';
 export * from './sqlite/capture-repository.js';
+export * from './sqlite/suggestion-repository.js';
+export * from './sqlite/calendar-item-repository.js';
