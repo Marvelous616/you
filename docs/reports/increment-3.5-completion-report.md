@@ -189,21 +189,27 @@ All PC targets pass. Every metric has more than 5x headroom on the PC; the tight
 
 ## 8. Server Facts
 
-Filled in when the owner provides access. The server is Arch Linux (owner-confirmed).
+Facts collected over SSH on 2026-10-26. The server runs Arch from a persistent archiso image; the owner accepted that risk in writing (`deploy/README.md`, "Accepted risk: persistent archiso server").
 
 | Fact | Value |
 |---|---|
-| OS | Arch Linux — version, kernel and install state pending (`cat /etc/os-release`, `uname -r`, `findmnt /`, `lsblk -f`) |
-| Node | PC **v24.19.0**; server pending (`node -v`). Match the major before the first deploy. |
-| SSH | Pending — key-only login, password authentication disabled |
-| Tailscale | Pending — record the server's tailnet name; server, PC and phone in the same tailnet; `tailscale serve --bg 8080` |
+| Access | Tailscale MagicDNS `root@zeserver`; server tailnet address `100.118.253.6` |
+| Hardware | Dell Inspiron 1545, Pentium T4300 (2) @ 2.10 GHz, 3.78 GiB RAM, 113.63 GiB disk, AC connected |
+| OS | Arch Linux, kernel **7.2.6-arch2-1**, archiso 2025-06-01, Legacy BIOS |
+| Root filesystem | `airootfs` overlay with `upperdir` on `/dev/sda2` (ext4, `SERVER_DATA`); `/dev/sda1` vfat `ARCH_BOOT` |
+| Persistence | Overlay writable layer on `sda2`: 18 GiB of 114 GiB used, 91 GiB free |
+| Packages | 762 installed; installed `linux` 7.2.11.arch1-1 is newer than the running ISO kernel |
+| Node | Server **v24.22.1**, npm 12.2.1; PC v24.19.0 — same major |
+| Swap | None at acceptance; `server-setup.sh` adds zram (provisioning pending) |
+| SSH | Key-only from the PC after `ssh-copy-id`; password login still enabled pending owner confirmation |
+| Tailscale | Up; `zeserver` 100.118.253.6, PC `dainsleif-1` 100.95.12.12; phone `praneeths-galaxy-s9` 100.99.100.118 |
 | Build drill | Pending — `npm ci` + build duration and peak RSS (`/usr/bin/time -v`) |
 | Idle use | Pending — CPU and RSS of the running service |
 | Rollback drill | Pending — record date and timing |
 | Restore drill | Pending — record date, data check and `PRAGMA integrity_check` |
 | Reboot drill | Pending — service and backup timer back without a login |
 
-Do not deploy if `findmnt /` shows an `/run/archiso/cowspace` overlay: that is the live installer, not an installed system.
+Do not deploy if `findmnt /` shows an `/run/archiso/cowspace` overlay without a recorded decision: the machine is then the live installer. This server has that decision recorded, with mitigations, in `deploy/README.md`.
 
 ---
 
@@ -230,7 +236,7 @@ Do not deploy if `findmnt /` shows an `/run/archiso/cowspace` overlay: that is t
 
 | Risk | Mitigation / decision |
 |---|---|
-| The server is still running the live installer | `server-setup.sh` never checks this; the runbook requires `findmnt /` first and records the decision. |
+| The server runs the live archiso image, not an installed Arch | Owner accepted the risk in writing on 2026-10-26 after seeing `findmnt /`, `lsblk -f` and the kernel command line. Mitigations: no blind full upgrades, keep the ISO, watch overlay free space, weekly off-machine copies. |
 | Builds exhaust RAM on 3.8 GB | zram, `MemoryMax=1G` on the service, and the documented PC-build fallback. Server build is attempted first. |
 | Windows line endings break the scripts | `.gitattributes` plus shellcheck and the deploy tests; scripts are mode `100755`. |
 | Native SQLite fails on the old CPU | Node 24's built-in `node:sqlite`; run the suite on the server before the first real deploy and record the version. |
@@ -248,7 +254,7 @@ The repository is public at `github.com/Marvelous616/you`, the owner's choice; t
 1. The real deploy, rollback, restore, reboot and build drills are untested on hardware. The deploy tests use stubs because Windows cannot create symlinks without privileges.
 2. The server baseline JSON and the server column of the benchmark table do not exist yet.
 3. Android keeps the server URL and API key only for the current session; durable storage ships with `expo-sqlite` in Increment 4.
-4. HTTPS/cleartext and live/installed OS stay owner decisions until confirmed on the host.
+4. HTTPS/cleartext stays an owner decision until confirmed from the phone; the OS is a persistent archiso image, accepted in writing, not an installed system.
 5. The 14-day dual-device dogfooding clock starts after Increment 4 WP 4.1 and Diagnostics, not here.
 
 ---
@@ -266,31 +272,33 @@ git log --all -p | grep -cE 'file:///C:/[A-Za-z0-9]'   # must print 0
 
 The mirror backup outside the repository can be deleted once you are satisfied.
 
-### 12.2 Prepare the Arch server
+### 12.2 Prepare the Arch server (done 2026-10-26)
+
+The host is reachable as `root@zeserver` over Tailscale MagicDNS, key-only from the PC. Its root filesystem is the persistent archiso overlay accepted above, and the server Node is v24.22.1 (PC major 24).
 
 ```bash
-ssh <user>@<server>
-findmnt / && lsblk -f && cat /etc/os-release && uname -r
-node -v          # must match the PC major (v24.x)
+ssh root@zeserver
+findmnt / && lsblk -f && uname -r
+node -v          # v24.22.1
 ```
 
-If `/` is an `/run/archiso/cowspace` overlay, install Arch to the internal disk before continuing. Authenticate once to GitHub (read-only deploy key or `gh auth login`) and clone:
+The repository is public, so the server needs no GitHub credentials:
 
 ```bash
-git clone https://github.com/Marvelous616/you.git ~/life-logger
-cd ~/life-logger
-sudo DEPLOY_USER="$USER" ./deploy/server-setup.sh
+git clone https://github.com/Marvelous616/you.git /root/life-logger
+cd /root/life-logger
+DEPLOY_USER=root ./deploy/server-setup.sh
 systemctl is-enabled lifelogger.service lifelogger-backup.timer
 ```
 
-If the server Node major differs from the PC, install the matching major explicitly and re-run the check; the script warns but does not guess versions.
+`DEPLOY_USER=root` because root is the only SSH account on the host; `deploy.sh` runs inside `post-receive` as the pushing user. The service itself runs as `lifelogger`.
 
 ### 12.3 First deploy and on-host verification
 
 On the PC:
 
 ```bash
-git remote add server <user>@<server>:/opt/lifelogger/repo.git
+git remote add server root@zeserver:/opt/lifelogger/repo.git
 git push server main
 git push server v0.3.5-increment-3.5
 ```
@@ -300,7 +308,7 @@ On the server:
 ```bash
 curl -fsS http://127.0.0.1:8080/health
 curl -fsS http://127.0.0.1:8080/ | head
-sudo systemctl status lifelogger
+systemctl status lifelogger
 journalctl -u lifelogger -n 50 --no-pager
 ```
 
@@ -319,29 +327,27 @@ Copy `docs/benchmarks/increment-3.5-server-baseline.json` back to the PC and com
 
 ### 12.4 Tailscale and Android
 
-Give the server a DHCP reservation or a stable LAN hostname before joining the tailnet, then:
+Tailscale is already installed and up on the server (`zeserver` 100.118.253.6; PC `dainsleif-1`; phone `praneeths-galaxy-s9`). Only the HTTPS front and the app settings remain:
 
 ```bash
-sudo pacman -S --needed tailscale
-sudo systemctl enable --now tailscaled
-sudo tailscale up
-sudo tailscale serve --bg 8080
+ssh root@zeserver
+tailscale serve --bg 8080
 tailscale serve status
 ```
 
-Set `HOST=127.0.0.1` in `/etc/lifelogger.env`, restart the service, and open `https://<machine>.<tailnet>.ts.net` from the phone. Enter that URL and the `API_KEY` from `/etc/lifelogger.env` in the app's **Server Connection** card. Log a marker on the PC, pull on the phone, and reverse. Repeat once with Wi-Fi off on the phone, then record the server's tailnet name in the report.
+Then set `HOST=127.0.0.1` in `/etc/lifelogger.env`, restart the service, and open the `https://<machine>.<tailnet>.ts.net` URL from the phone. Enter that URL and the `API_KEY` from `/etc/lifelogger.env` in the app's **Server Connection** card. Log a marker on the PC, pull on the phone, and reverse. Repeat once with Wi-Fi off on the phone, then record the served URL in the report.
 
 ### 12.5 Drills to record
 
 ```bash
 # backup and restore
-sudo /opt/lifelogger/backup.sh
-sudo DB_PATH=/tmp/life-logger-restore-drill.db \
+/opt/lifelogger/backup.sh
+DB_PATH=/tmp/life-logger-restore-drill.db \
   /opt/lifelogger/restore.sh /var/lib/lifelogger/backups/<file>.db --yes
 sqlite3 /tmp/life-logger-restore-drill.db 'PRAGMA integrity_check;'
 
 # reboot
-sudo reboot
+reboot
 # after boot:
 systemctl is-active lifelogger lifelogger-backup.timer
 systemctl list-timers lifelogger-backup.timer

@@ -10,12 +10,61 @@ Fill these in as they are decided. They are repeated in the completion report.
 
 | Decision | Value | Notes |
 | --- | --- | --- |
-| Server OS | Arch Linux (owner-confirmed) | Record `uname -r` and `cat /etc/os-release` on the host. If `/` is an `/run/archiso/cowspace` overlay, the machine is still the live installer; install Arch to the internal disk or record a written decision to accept the risk. |
+| Server OS | Arch Linux archiso with persistence (risk accepted, see below) | `zeserver` boots the 2025-06-01 Arch ISO with `cow_label=SERVER_DATA`; `/` is an `airootfs` overlay whose writable layer lives on `/dev/sda2` (ext4, label `SERVER_DATA`). Not an installed system, but persistent across reboots. Kernel 7.2.6-arch2-1 at acceptance time. |
 | Repository visibility | Public (owner-created) | `github.com/Marvelous616/you`. Private was recommended; the owner chose public, so the secret and absolute-path scans are mandatory and real credentials stay only in `/etc/lifelogger.env`. |
 | Build location | Server first, PC fallback | A 3.8 GB Pentium may run out of memory during `npm ci` and the build. If it does, build on the PC and ship `node_modules` plus `dist` as the release artifact, and record why. |
 | Device transport | A: HTTPS through Tailscale (recommended) | Preferred, and requires no cleartext build flag. Option B (cleartext) only if HTTPS is unavailable; record the change here if taken. |
-| Node version | PC: v24.19.0, server: _pending_ | `node -v` on both. Match the major version before the first deploy. |
-| Live vs installed OS | _pending_ | WP 3.5.4 step 1. Never deploy onto the live installer overlay. |
+| Node version | PC: v24.19.0, server: v24.22.1 | Same major (24); no change needed. |
+| Live vs installed OS | **Live archiso with persistence — risk accepted 2026-10-26** | See "Accepted risk: persistent archiso server" below. |
+
+### Accepted risk: persistent archiso server
+
+The owner was shown the evidence below and chose, in writing on 2026-10-26, to run
+Life Logger on the persistent archiso environment rather than reinstall Arch to
+the internal disk. Reinstalling cannot be done over SSH because the running
+overlay's writable layer is on the disk that would be formatted.
+
+Evidence collected on `zeserver` (Tailscale MagicDNS, `root@zeserver`):
+
+```text
+/            airootfs  overlay  upperdir=/run/archiso/cowspace/persistent_/x86_64/upperdir
+/run/archiso/cowspace  ext4  /dev/sda2  label SERVER_DATA
+/dev/sda1    4G   vfat   ARCH_BOOT
+loop0        854M squashfs /run/archiso/airootfs
+kernel       7.2.6-arch2-1
+cmdline      archisobasedir=arch archisosearchuuid=2025-06-01-09-10-39-00 copytoram=y cow_label=SERVER_DATA
+firmware     Legacy BIOS (no /sys/firmware/efi)
+fstab        empty
+packages     762, including linux 7.2.11.arch1-1 (not the running kernel)
+```
+
+What this means in practice:
+
+- Installed packages, `/etc`, `/home` and the database survive reboots, because the
+  overlay's writable layer is the ext4 partition on `sda2`.
+- The boot chain uses the **ISO's** kernel and initramfs on `sda1`, not the `linux`
+  package's. The installed `linux` package is therefore not what boots the machine.
+- There is no `fstab` and no installed bootloader configuration to rebuild; the
+  machine is only recoverable through the archiso boot entry and the ISO.
+
+Mitigations that go with the acceptance:
+
+1. **No blind full upgrades.** `pacman -Syu` can pull a `linux` package whose
+   modules no longer match the ISO kernel. Upgrade deliberately, reboot, and
+   re-run `systemctl is-active lifelogger lifelogger-backup.timer` plus `/health`.
+2. **Keep the ISO and its boot entry.** Recovery depends on booting the same
+   `archisosearchuuid=2025-06-01-09-10-39-00` with `cow_label=SERVER_DATA`.
+   Copy the ISO somewhere off the machine and record its name and checksum here.
+3. **Watch the overlay.** `df -h /` reports the writable layer. At acceptance:
+   18 GiB of 114 GiB used, 91 GiB free. A full overlay breaks writes and the app.
+4. **Off-machine copies.** Weekly copy of `/var/lib/lifelogger/backups`, `/etc`,
+   and `pacman -Qqe` to the PC. The server has no second disk.
+5. **No unattended kernel or security updates.** This is a home server on a
+   tailnet, not an internet-facing host; the app still binds per `/etc/lifelogger.env`.
+
+If the machine is ever reinstalled properly, `server-setup.sh` is idempotent and
+the decision above can be replaced with the installed-system facts.
+
 
 ## Rules that keep releases safe
 
