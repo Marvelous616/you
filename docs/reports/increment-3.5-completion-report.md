@@ -65,8 +65,9 @@ Installed on `zeserver` on 2026-10-26:
 Remaining, and not claimed as done:
 
 - A true version upgrade and rollback drill need a second release.
-- The reboot drill needs the boot media and console access because the running
-  kernel and `/lib/modules` disagree.
+- The reboot drill is blocked: on 2026-10-26 the ISO UUID was not attached, so
+  the preflight stopped before any reboot. It also needs console access because
+  the running kernel and `/lib/modules` disagree.
 - PC/phone sync over the tailnet is unchanged and still owner-verified.
 
 ## 2. Delivered Work Packages
@@ -277,6 +278,7 @@ The published artifact's checksum covers the exact bytes uploaded.
 | OS | Arch Linux, running kernel **7.2.6-arch2-1**, archiso 2025-06-01, Legacy BIOS |
 | Installed kernel modules | `/lib/modules/7.2.11-arch1-1` only, so the running kernel and modules disagree |
 | Root filesystem | `airootfs` overlay with `upperdir` on `/dev/sda2` (ext4); `/dev/sda1` vfat `ARCH_BOOT` |
+| Boot media | `/dev/sda1` holds the archiso kernel, initramfs and squashfs plus the boot entries; the running system comes from `copytoram` |
 | Persistence | Writable overlay on `sda2`; 17.06 GiB used of 113.63 GiB (15%) after the install |
 | Node | **v24.22.1**, npm 12.2.1 |
 | Package | `lifelogger 0.3.6-1` installed from the GitHub release |
@@ -300,6 +302,7 @@ The published artifact's checksum covers the exact bytes uploaded.
 | Web footer | Headless Chrome: `Life Logger 0.3.6 · schema 3 · sync protocol 1` |
 | Service | active and enabled; packaged unit at `/usr/lib/systemd/system/lifelogger.service` |
 | Backup timer | active and enabled; next run scheduled by systemd |
+| Reboot preflight | **Blocked** 2026-10-26: ISO UUID `2025-06-01-09-10-39-00` absent from attached block devices; `/run/archiso/bootmnt` absent; no reboot issued |
 | Database | `PRAGMA integrity_check` -> `ok`; 12 tables including `events`, `markers`, `days`, `journal_entries`, `captures`, `calendar_items`, `suggestions` and `schema_migrations` (versions 1-3) |
 | Backup drill | **1 s**; `life-logger-20261026T135045Z.db`, mode 600, integrity `ok` |
 | Restore drill | **1 s** into `/tmp/lifelogger-restore-drill.db`; health passed; integrity `ok`; live DB untouched |
@@ -333,7 +336,7 @@ decision, repair the kernel/module mismatch, or reinstall the host.
 | `/health` and web footer show 0.3.6 on the server | Pass |
 | Upgrade and rollback drills | Partial: same-version reinstall pass (5 s); true version upgrade and rollback pending a second release |
 | Restore drill with `PRAGMA integrity_check` | Pass (scratch DB, 1 s) |
-| Service and backup timer survive reboot | **Pending** (needs boot media and console) |
+| Service and backup timer survive reboot | **Pending** (preflight blocked: boot ISO UUID not attached; no reboot issued) |
 | Benchmark regression guard | Pass earlier; unchanged; server benchmark not run |
 | PC and phone sync over Tailscale | **Pending owner** |
 
@@ -376,6 +379,18 @@ decision, repair the kernel/module mismatch, or reinstall the host.
 - The live database file is mode 644 while its directory is mode 750 and owned
   by `lifelogger`; only root and the service user can traverse the directory. A
   future `UMask=0077` in the packaged unit would harden the file itself.
+- The reboot drill was taken only as far as a preflight check. On 2026-10-26 the
+  ISO UUID `2025-06-01-09-10-39-00` was absent from every attached block device,
+  `/run/archiso/bootmnt` was not mounted and the running system was coming from
+  `copytoram`. No reboot was issued. `/dev/sda` is the external USB disk with the
+  `ARCH_BOOT` and `SERVER_DATA` partitions; its boot entries still search for the
+  ISO UUID. The original boot ISO (or an equivalent loopback setup) must be
+  attached before a reboot, with console access available.
+- The running kernel is 7.2.6 while the only installed modules are 7.2.11. The
+  ISO's lower layer has 6.14.9 modules whiteouted in the overlay. A future reboot
+  should restore the matching 7.2.6 modules (the cached package is at
+  `/var/cache/pacman/pkg/linux-7.2.6.arch2-1-x86_64.pkg.tar.zst`) or otherwise
+  prove the boot kernel has the modules it needs.
 - The web footer was verified with headless Chrome on the build PC. The desktop
   browser pane was not connected during this session.
 - The server still sets `HOST=0.0.0.0`; moving to `tailscale serve` with
@@ -413,7 +428,12 @@ decision, repair the kernel/module mismatch, or reinstall the host.
 1. **Reboot drill.** Do this only with the archiso boot media attached and
    console access available. The running kernel is 7.2.6 while `/lib/modules`
    only has 7.2.11, and the host boots with `copytoram=y` from the ISO UUID
-   `2025-06-01-09-10-39-00`. Do not reboot blindly. After a reboot, verify
+   `2025-06-01-09-10-39-00`. On 2026-10-26 the preflight failed: that UUID was
+   absent from every attached block device, `/run/archiso/bootmnt` was not
+   mounted and the system was running from `copytoram`. **No reboot was issued.**
+   Attach the original ISO (or an equivalent loopback setup), confirm
+   `lsblk -f`/`blkid` shows the UUID, and restore matching 7.2.6 modules before
+   trying again. After a reboot, verify
    `systemctl is-active lifelogger.service lifelogger-backup.timer` and
    `/health`.
 2. **True upgrade and rollback drill.** Build and publish the next tag, install
@@ -439,7 +459,7 @@ decision, repair the kernel/module mismatch, or reinstall the host.
 | Assets | package, package `.sha256`, `PKGBUILD`, `SRCINFO` |
 | Server state | `lifelogger 0.3.6-1` installed; service and backup timer active and enabled; `/health` ok; DB schema 3 |
 | Install time | 9 s from installer start to healthy (`/var/cache/lifelogger` keeps the package) |
-| Drills | Backup 1 s, scratch restore 1 s, same-version reinstall 5 s; true upgrade, rollback and reboot pending |
+| Drills | Backup 1 s, scratch restore 1 s, same-version reinstall 5 s; true upgrade and rollback pending; reboot preflight blocked (ISO UUID not attached, no reboot issued) |
 
 The package was built and tested on this PC, not on the Pentium server. The
 server only needs `pacman`, Node and `sqlite`, all of which it already has.
