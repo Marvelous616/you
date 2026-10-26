@@ -1,173 +1,232 @@
 # Increment 3.5: Repository, Server and Deployment — Completion & Verification Report
 
-> **Project:** Life Logger  
-> **Milestone:** Increment 3.5 (repository hygiene, runtime configuration, deployment)  
-> **Git Release Tag:** `v0.3.5-increment-3.5`  
-> **Date:** October 25, 2026  
-> **Status:** Agent-side engineering complete — every automated gate passed locally, and the repository is published at `github.com/Marvelous616/you`. Server provisioning, the real drills and dual-device sync remain owner actions.
+> **Project:** Life Logger
+> **Milestone:** Increment 3.5 redo — Arch package delivery
+> **Git Release Tag:** `v0.3.6-increment-3.5`
+> **Date:** October 26, 2026
+> **Status:** Package built and published from this PC; every automated gate passed.
+> Server migration, install and drills remain owner actions because this build PC
+> has no SSH key for `zeserver`.
 
 ---
 
 ## 1. Executive Summary
 
-Increment 3.5 adds no product behaviour. It turns a working codebase into something that can be cloned, configured, deployed, backed up, rolled back and measured without guesswork:
+Increment 3.5 adds no product behaviour. It changes how the server receives the
+application. The first attempt built and deployed on the server by pushing a git
+tag; this redo replaces that with one Arch package built on this PC, published on
+GitHub and installed with `pacman`.
 
-- The repository has no secrets, no absolute `file:///C:/…` links (in the working tree *or* in history), LF endings for shell scripts, and executable bits recorded in git.
-- The server reads all runtime settings from environment variables, exposes `/health` with version, schema version, sync protocol version and a single-row database probe, serves the built web app, and shuts down cleanly on `SIGTERM`/`SIGINT`.
-- `deploy/` contains a complete Arch Linux story: idempotent provisioning, systemd units, tag-triggered deploy with pre-deploy backup and automatic rollback, daily backups with integrity checks, a guarded restore, and a runbook.
-- The benchmark harness gains host details, JSON output, a PC/server label and a 3x regression comparison, so the server baseline can be compared against the PC baseline without hand-editing JSON.
-- The owner confirmed the server runs Arch Linux. The provisioning script already targets Arch and refuses to run elsewhere.
+The redo was requested because the old model was too heavy and too fragile for the
+target host:
 
-The remaining work needs the physical server and the phone. Section 12 lists the exact commands.
+- It ran `npm ci`, the full build and the test suite on a 3.78 GiB Pentium with
+  two cores.
+- Every release grew a new directory with its own `node_modules` under
+  `/opt/lifelogger/releases`, kept alive by a `current` symlink.
+- A `post-receive` hook, a deploy lock, a version file and a health rollback were
+  all custom code that had to be maintained for each release.
+- The host boots from a persistent archiso, so a failed deploy had to be repaired
+  through the same fragile path.
 
----
+Now the PC does the compiling. The server downloads a 447,684-byte package,
+verifies its SHA-256, lets `pacman` place the files and restarts the same systemd
+service. The database and `/etc/lifelogger.env` stay outside package ownership, so
+install, upgrade and rollback do not touch data or secrets.
+
+Delivered:
+
+- `packaging/` with a real `PKGBUILD`, a single-file CommonJS server bundle,
+  packaged units, sysusers/tmpfiles entries, backup/restore scripts, a build
+  script, a release script and a server installer.
+- Release `v0.3.6-increment-3.5` at
+  `https://github.com/Marvelous616/you/releases/tag/v0.3.6-increment-3.5`
+  with the package, `.sha256`, `PKGBUILD` and `SRCINFO`.
+- 154 unit/integration tests, 59 packaging checks, 29 built-package checks,
+  clean shellcheck and typechecks.
+- The old `deploy/` tree and its tag-push mechanism removed from `main`.
+
+Pending, and not claimed as done:
+
+- The package is not yet installed on `zeserver`. SSH reaches the host but this PC
+  has no private key, so authentication fails.
+- The old admin units and the legacy `WEB_DIR` are still on the server.
+- Upgrade, rollback, restore and reboot drills are not recorded.
+- PC/phone sync over the tailnet is unchanged and still owner-verified.
 
 ## 2. Delivered Work Packages
 
-| WP | Deliverable | Status |
-|---|---|---|
-| **WP 3.5.1** | Repository hygiene: secret scan, relative links, `.gitattributes`, executable scripts, history rewrite | Complete (published) |
-| **WP 3.5.2** | Runtime configuration, `/health`, static web serving, graceful shutdown | Complete (agent) |
-| **WP 3.5.3** | Deploy artifacts: `deploy.sh`, `post-receive`, `server-setup.sh`, systemd units, backup/restore, tests | Complete (agent) |
-| **WP 3.5.4** | Server provisioning on Arch Linux | Blocked — needs owner and hardware |
-| **WP 3.5.5** | First deploy, on-host tests, benchmark baseline | Blocked — needs deployed server |
-| **WP 3.5.6** | Benchmark regression guard | Complete (agent), server baseline pending |
-| **WP 3.5.7** | Tailscale connectivity and Android transport | Blocked — needs server, PC and phone |
+| WP | Result |
+| --- | --- |
+| 3.5.1 Repository and GitHub | Done. Public repository, `main`, historical tags, LF rules, executable bits, no tracked secrets or absolute local paths. |
+| 3.5.2 Runtime configuration and health | Done. Environment-driven config, light `/health`, static web serving and clean `SIGTERM`; covered by the existing suite. |
+| 3.5.3 Package and build artifacts | Done. `PKGBUILD`, esbuild bundle, units, sysusers/tmpfiles, backup/restore, build/release/install scripts, tests and runbook. |
+| 3.5.4 Publish and migrate | Release published. Server migration and install pending SSH access. |
+| 3.5.5 On-host verification and drills | Pending. Needs the server install. |
+| 3.5.6 Benchmark regression guard | Done earlier; compare mode and tests unchanged. |
+| 3.5.7 Connectivity | Pending owner verification over Tailscale. |
 
----
+## 3. Architecture
 
-## 3. Architecture and Key Files
+### Runtime configuration
 
-### Runtime configuration (`apps/server/src/config.ts`)
+| Variable | Package default | Meaning |
+| --- | --- | --- |
+| `DB_PATH` | `/var/lib/lifelogger/life.db` | SQLite database. Keeps the existing filename, so no data move is needed. |
+| `WEB_DIR` | `/usr/lib/lifelogger/web` | Built web app inside the package. |
+| `HOST` | `127.0.0.1` | Loopback default; `/etc/lifelogger.env` may still set `0.0.0.0` for direct tailnet access. |
+| `PORT` | `8080` | HTTP port. |
+| `LOG_LEVEL` | `info` | Fastify log level. |
+| `API_KEY` | unset | When set in `/etc/lifelogger.env`, `/api/` requires a bearer key. |
+| `APP_VERSION` | `/usr/lib/lifelogger/version.env` | Written by `package()`; loaded last so it cannot be overridden. |
 
-Every setting comes from the environment, with development defaults:
+The unit loads the package defaults, then `/etc/lifelogger.env`, then
+`version.env`. The backup unit loads the same two environment files, so a
+host-specific `DB_PATH` is honoured by backups.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `DB_PATH` | `data/life-logger.sqlite` (or under `DATA_DIR`) | SQLite file; relative paths resolve against the working directory. |
-| `WEB_DIR` | `apps/web/dist` | Built web app served by the API process. |
-| `HOST` | `0.0.0.0` | Bind address. Use `127.0.0.1` behind Tailscale Serve. |
-| `PORT` | `4000` | HTTP port. |
-| `LOG_LEVEL` | `info` | `fatal` through `silent`; invalid values stop startup. |
-| `API_KEY` | unset | When set, every `/api/` request needs `Authorization: Bearer <key>`. |
-| `APP_VERSION` | root `package.json` version | Release identifier; deploys set it from the tag. |
-| `DATA_DIR` | `data` | Local-development fallback when `DB_PATH` is unset. |
+### Health and serving
 
-`.env.example` documents the same names. `npm run dev` and `npm start` load the root `.env` with `--env-file-if-exists`, so a Windows developer does not need to export variables by hand.
+`GET /health` returns `status`, `database`, `version`, `schemaVersion`,
+`syncProtocolVersion` and a timestamp. The database probe is a single-row
+`SELECT 1`; the schema version is read once at startup. A database failure returns
+HTTP 503. `/health` and the static assets stay open; the API key hook is scoped to
+`/api/`.
 
-The schema version is read once at startup, not per request. `/health` therefore never scans application tables.
+The built web app is served by the same Fastify process. `index.html` is
+`no-cache`, hashed assets are immutable, and unknown extension-less `GET` paths
+fall back to `index.html`. `SIGTERM`/`SIGINT` stop accepting requests, drain,
+checkpoint the WAL, close SQLite and exit.
 
-### Health, static serving and shutdown
+### Package layout
 
-`GET /health` returns:
-
-```json
-{
-  "status": "ok",
-  "database": "connected",
-  "version": "v0.3.5-increment-3.5",
-  "schemaVersion": 3,
-  "syncProtocolVersion": 1,
-  "timestamp": "2026-10-25T…Z"
-}
+```text
+/usr/bin/lifelogger
+/usr/lib/lifelogger/{server.cjs,lifelogger.env,version.env,backup.sh,restore.sh}
+/usr/lib/lifelogger/web/{index.html,assets/...}
+/usr/lib/systemd/system/lifelogger.service
+/usr/lib/systemd/system/lifelogger-backup.{service,timer}
+/usr/lib/sysusers.d/lifelogger.conf
+/usr/lib/tmpfiles.d/lifelogger.conf
+/usr/share/doc/lifelogger/README.md
 ```
 
-The probe is `SELECT 1`; a database failure returns HTTP 503 with `status: "error"` and `database: "unavailable"`. `/health` and the static assets stay open; the API key hook is scoped to `/api/`.
+The package does **not** own `/etc/lifelogger.env` or `/var/lib/lifelogger`. That
+is the boundary that makes an upgrade safe.
 
-The built web app is served by the same process through `@fastify/static`. `index.html` is `no-cache`, hashed assets are `immutable`, and unknown extension-less `GET` paths fall back to `index.html` for client-side routing. `/api/`, `/health` and missing files still return JSON 404s.
+### Single-file server
 
-`@fastify/static` is the only new runtime dependency. The alternative — a second static server or a reverse proxy — would add another process and more RAM to a 3.8 GB machine. The web app is already built by Vite; serving it from Fastify keeps one process and one port.
+`packaging/bundle-server.mjs` runs esbuild over `apps/server/dist/index.js` and
+emits one CommonJS file. CJS is required: Fastify's dynamic requires fail in an
+ESM bundle with `Dynamic require of "node:events" is not supported`.
+`import.meta.url` is replaced at build time with the bundle's own file URL so
+`node:sqlite` and the static-serving paths resolve without `node_modules`.
 
-`SIGTERM` and `SIGINT` stop accepting requests, drain in-flight work, run `PRAGMA wal_checkpoint(TRUNCATE)`, close SQLite and exit 0 (1 on failure). Repeated signals are ignored, and a 10-second guard forces exit if a close hangs.
+The extracted package was started in a temporary directory with no
+`node_modules`, answered `/health`, served the web app and stopped cleanly on
+`SIGTERM`.
 
-### Sync protocol
+### Units and installer
 
-`SYNC_PROTOCOL_VERSION = 1` now lives in `packages/sync/src/protocol.ts` and is reported by `/health`, so a client can detect a server that speaks an older protocol before syncing.
-
-### Web and Android
-
-- The web footer fetches `/health` and shows the deployed version.
-- Android has a **Server Connection** card for the server URL and API key, with a test for the client accessors. The values live for the current app session; durable settings arrive with `expo-sqlite` in Increment 4.
-
-### Benchmark tooling
-
-`tools/bench` gained `--output`, `--host-label`, `--compare` and `--help`. Output records CPU model, core count, RAM, Node version, platform, architecture and app version. `--compare <baseline>` fails when any shared metric exceeds 3x its baseline value, and prints the ratio. New metrics do not fail against an older baseline.
-
----
+- `lifelogger.service` runs as `lifelogger`, restarts always, and keeps
+  `MemoryMax=1G`, `ProtectSystem=strict`, `ProtectHome=true`,
+  `ReadWritePaths=/var/lib/lifelogger` and `NoNewPrivileges=true`.
+- `lifelogger-backup.timer` runs daily at 03:30 with jitter and persistence.
+- `install-release.sh` locks with `flock`, validates the tag, refuses while an
+  admin unit shadows the packaged one, downloads the package and checksum,
+  verifies SHA-256, runs `pacman -U`, reloads systemd, enables the service and
+  timer, and requires `/health` to report the new version. On failure it
+  reinstalls the previous cached package. `--dry-run` prints the plan without
+  downloading or changing anything.
 
 ## 4. Repository Hygiene
 
-### Secrets and absolute paths
+- `deploy/` was removed: `deploy.sh`, `post-receive`, `server-setup.sh`, the
+  admin units, the deploy tests and the old runbook. The release symlink farm is
+  gone.
+- `packaging/` is the only delivery path. `.gitattributes` keeps LF for
+  `packaging/**`, `PKGBUILD`, `.SRCINFO` and `*.install`; shell scripts and the
+  runner are executable in git.
+- `.gitignore` covers package artifacts, `packaging/src`, `packaging/pkg` and
+  build output.
+- A scan of tracked files found no API keys, private keys or absolute
+  `file:///C:/` development paths; the history check for those paths returns 0.
+- The repository is public. Historical tags, including
+  `v0.3.5-increment-3.5`, remain. The redo is a new tag, not a rewritten one.
+- The untracked `ses_*.json` session file in the worktree is not committed.
 
-- Tracked files were scanned for API keys, passwords, private keys, keystores and LAN addresses. None are present. Runtime secrets live in `/etc/lifelogger.env` on the server, documented by `.env.example` with empty values.
-- `.gitignore` now excludes `.env` (except `.env.example`), Android/Expo native output, signing material, SQLite databases, the deploy lock and OS files.
-- Absolute `file:///C:/` Markdown links pointing at the local checkout were replaced with relative links, including `%20` and `%28`/`%29` encoding for names with spaces and parentheses.
+## 5. Packaging, Build and Release
 
-### History rewrite
+### Build host
 
-The repository had no remote, so the absolute links were removed from history rather than left behind:
+| Fact | Value |
+| --- | --- |
+| OS | Arch Linux, kernel 7.2.11-arch1-1 |
+| CPU | 13th Gen Intel Core i7-13700HX, 16 cores / 24 threads |
+| RAM | 15.7 GiB |
+| Node | v22.23.2 via nvm; npm 10.9.8 |
+| Package tool | `makepkg` from `base-devel` |
+| Warm rebuild of the published tag | 18 s (`makepkg --cleanbuild`, git clone and npm cache warm) |
 
-1. A mirror backup was taken outside the repository at `%TEMP%\opencode\you-backup.git`.
-2. `git filter-branch --tree-filter` ran the link fixer over every commit, with `--tag-name-filter cat -- --all`.
-3. `refs/original` was deleted, reflogs expired and `git gc --prune=now` pruned the old objects.
-4. Verification:
-   - `git log --all -p | grep -cE 'file:///C:/[A-Za-z0-9]'` returns **0**.
-   - The rewritten HEAD tree is byte-identical to the pre-rewrite tree (`74a6f91…`).
-   - Each rewritten tag tree differs from the backup only in documentation files, and only on link lines.
-   - All three earlier tags were rewritten and still point at their original commits' content.
+The build PC's pacman `nodejs` provider is an older LTS (20.20.2), while the nvm
+Node 22.23.2 is first on `PATH`. `build.sh` checks the `PATH` version and passes
+`--nodeps` only in that case. The PKGBUILD still declares the real runtime
+requirement, `nodejs>=22.5`, which the server's Node 24.22.1 satisfies.
 
-There are no other clones, so no collaborator needs to re-clone. The mirror backup outside the repository can be deleted once the owner is satisfied.
+### Package metadata
 
-### Line endings and executable bits
+| Fact | Value |
+| --- | --- |
+| Package | `lifelogger 0.3.6-1` |
+| Architecture | `any` |
+| Runtime dependencies | `nodejs>=22.5`, `sqlite` |
+| Build dependencies | `git`, `nodejs`, `npm` |
+| Source | `git+https://github.com/Marvelous616/you.git#tag=v0.3.6-increment-3.5` |
+| Artifact | `lifelogger-0.3.6-1-any.pkg.tar.zst`, 447,684 bytes (437 KiB) |
+| SHA-256 | `cd568fb4714b862260833cd2fb6069d575d7486cd358c16bd502009a513bb85e` |
+| Tag commit | `5e054bc` |
 
-`.gitattributes` forces LF for `*.sh`, `*.service`, `*.timer` and everything under `deploy/`, keeps CRLF for PowerShell, and treats database and image files as binary. `deploy.sh`, `backup.sh`, `restore.sh`, `server-setup.sh`, `post-receive` and the deploy test are recorded as mode `100755` in git.
+### Release
 
----
+- URL: `https://github.com/Marvelous616/you/releases/tag/v0.3.6-increment-3.5`
+- Assets: package (447,684 bytes), `.sha256` (101 bytes), `PKGBUILD` (2,066
+  bytes), `SRCINFO` (458 bytes).
+- `packaging/release.sh` regenerates `.SRCINFO`, pushes `main` and the annotated
+  tag, builds the package from the pushed tag, then creates the release.
 
-## 5. Deployment Design
-
-| Piece | Behaviour |
-|---|---|
-| `server-setup.sh` | Refuses non-Arch hosts (`/etc/arch-release`). Installs `git nodejs npm sqlite3 curl zram-generator sudo`, creates the `lifelogger` service account, directories, zram, lid settings, units, a narrow `systemctl` sudoers rule, the bare repository and the hook. Idempotent. |
-| `post-receive` | Deploys only tags matching `v*`; branch pushes and tag deletions are ignored. |
-| `deploy.sh` | Validates the tag regex, takes a `flock`, builds in a private worktree, backs up the database, switches `current`, writes `version.env`, restarts the service, health-checks for 10 seconds and rolls back on failure. Keeps the last five releases. Supports `--dry-run`. |
-| `lifelogger.service` | Runs as `lifelogger`, reads `/etc/lifelogger.env`, sets `MemoryMax=1G`, restarts on failure, and stops gracefully. |
-| `backup.sh` + timer | `sqlite3 .backup`, `PRAGMA integrity_check` on the copy, 14-day retention, non-zero exit on any failure. Daily at 03:30 with a 15-minute jitter and `Persistent=true`. |
-| `restore.sh` | Refuses without `--yes`, refuses a backup that fails integrity, stops the service, moves the live database aside, clears `-wal`/`-shm`, copies the backup, starts the service and health-checks. `DB_PATH` can point at a scratch file for the drill. |
-
-Deploys run as the owner's account (`DEPLOY_USER`, default `${SUDO_USER}`); the service and data are owned by `lifelogger`. The repository and releases are owned by the deploy user, so `git push` and builds do not need broad sudo.
-
-The runbook (`deploy/README.md`) records the paths, first install, normal deploy, manual and automatic rollback, restore, backups, logs, Node upgrades, troubleshooting and drills. Its decisions table now records the owner-confirmed Arch Linux server.
-
----
+GitHub renames assets whose names start with a dot, so the first upload appeared
+as `default.SRCINFO`. The release was corrected by deleting that asset and
+uploading a copy named `SRCINFO`. `release.sh` now always uploads a temp copy
+named `SRCINFO`, and the runbook and spec say so.
 
 ## 6. Test Verification
 
 | Gate | Result |
-|---|---|
-| Full suite | **154 tests in 23 files, all passing** |
-| Server operations tests | `/health` ok and 503, static serving, SPA fallback, auth scoping, config parsing, graceful shutdown |
-| Deploy script tests | **37 passed, 0 failed** with stubs for `systemctl`, `curl`, `sqlite3`, `git`, `npm`, `flock`, `ln` and `readlink` |
-| ShellCheck | 0.11.0, clean at `--severity=style` for `deploy/*.sh`, `post-receive` and the deploy test |
-| Root TypeScript build | `tsc -b` passed |
-| Web production build | Vite build passed (`dist/assets/index-*.js`, 178.62 kB / 55.74 kB gzip) |
-| Android typecheck | `npm run --workspace=@life-logger/android typecheck` passed |
-| Fresh clone from GitHub | `git clone https://github.com/Marvelous616/you.git`, then `npm ci` (82 s), 154 tests, typecheck, web build, Android typecheck and the 37 deploy tests all passed |
-| Benchmark regression guard | Compared the new PC run against `docs/benchmarks/increment-3-baseline.json`; no metric over 3x; unit and CLI tests cover the comparison and output formats |
+| --- | --- |
+| Unit and integration suite | **154 tests in 23 files passed** (`npm test`) |
+| TypeScript project build | Passed (`tsc -b`) |
+| Android TypeScript check | Passed (`tsc --noEmit`) |
+| Package input checks | **37 passed** (version/tag, metadata, unit hardening, env order, file paths, script syntax) |
+| Script stub checks | **22 passed** (backup, restore, installer, dry run, health, rollback paths) |
+| Built-package verification | **29 passed** (metadata, file list, ownership boundaries, checksum, extracted server smoke test) |
+| ShellCheck | 0.11.0, **zero findings** for all packaging bash scripts, the `.install` scriptlet and the `sh` runner |
+| Vite production build | Passed inside the package `build()` |
+| `makepkg` | Produced `lifelogger-0.3.6-1-any.pkg.tar.zst` |
+| Bundle isolation | Runs with no `node_modules`; `/health` reports 0.3.6 and the database connected |
+| Clean shutdown | `SIGTERM` exits 0 after the WAL checkpoint |
 
-Two papercuts found during verification were fixed:
-
-- `npm run test:deploy` used `bash`, which resolves to the broken WSL bash on Windows. It now goes through `scripts/run-bash.mjs`, which prefers Git for Windows when present and uses plain `bash` everywhere else.
-- The Android typecheck command in the README used `npm run --workspace=… exec`, which npm does not support. Android now has a `typecheck` script, and the README uses it.
-
----
+The packaging checks run inside `makepkg`'s `check()`, so the published artifact
+cannot be produced without them. The built-package check runs against the artifact
+after the build, not against the source tree.
 
 ## 7. Benchmark Results vs Targets
 
-PC baseline: `docs/benchmarks/increment-3.5-pc-baseline.json` (i7-13700HX, 24 cores, 16 GB, Node v24.19.0, app version 0.3.5). The server column stays pending until WP 3.5.5.
+The PC baseline is `docs/benchmarks/increment-3.5-pc-baseline.json`. It was
+recorded before this redo on the same class of machine; this increment changes
+delivery, not runtime code. The server column is still pending because the package
+is not installed yet.
 
 | Metric | Target | PC | Server |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Single marker save (avg) | `< 50 ms` | **0.039 ms** | pending |
 | Single marker save (p95) | `< 50 ms` | **0.079 ms** | pending |
 | Batch ingest, 5,000 records | `< 500 ms` | **185.84 ms** | pending |
@@ -183,186 +242,158 @@ PC baseline: `docs/benchmarks/increment-3.5-pc-baseline.json` (i7-13700HX, 24 co
 | Pending suggestion query (avg) | `< 15 ms` | **0.867 ms** | pending |
 | Suggestion accept flow (avg) | `< 25 ms` | **0.110 ms** | pending |
 
-All PC targets pass. Every metric has more than 5x headroom on the PC; the tightest is batch ingest at 2.7x, which the server run must confirm.
+The regression guard (`tools/bench --compare`) fails when a shared metric exceeds
+3x its baseline. A server baseline is optional for this redo; the package has no
+new runtime work.
 
----
+## 8. Build Host and Server Facts
 
-## 8. Server Facts
+### Build host
 
-Facts collected over SSH on 2026-10-26. The server runs Arch from a persistent archiso image; the owner accepted that risk in writing (`deploy/README.md`, "Accepted risk: persistent archiso server").
+See Section 5. The build is reproducible from the tag; the warm rebuild took 18 s.
+The published artifact's checksum covers the exact bytes uploaded.
+
+### Server
 
 | Fact | Value |
-|---|---|
-| Access | Tailscale MagicDNS `root@zeserver`; server tailnet address `100.118.253.6` |
-| Hardware | Dell Inspiron 1545, Pentium T4300 (2) @ 2.10 GHz, 3.78 GiB RAM, 113.63 GiB disk, AC connected |
-| OS | Arch Linux, kernel **7.2.6-arch2-1**, archiso 2025-06-01, Legacy BIOS |
-| Root filesystem | `airootfs` overlay with `upperdir` on `/dev/sda2` (ext4, `SERVER_DATA`); `/dev/sda1` vfat `ARCH_BOOT` |
-| Persistence | Overlay writable layer on `sda2`: 18 GiB of 114 GiB used, 91 GiB free |
-| Packages | 762 installed; installed `linux` 7.2.11.arch1-1 is newer than the running ISO kernel |
-| Node | Server **v24.22.1**, npm 12.2.1; PC v24.19.0 — same major |
-| Swap | None at acceptance; `server-setup.sh` adds zram (provisioning pending) |
-| SSH | Key-only from the PC after `ssh-copy-id`; password login still enabled pending owner confirmation |
-| Tailscale | Up; `zeserver` 100.118.253.6, PC `dainsleif-1` 100.95.12.12; phone `praneeths-galaxy-s9` 100.99.100.118 |
-| Build drill | Pending — `npm ci` + build duration and peak RSS (`/usr/bin/time -v`) |
-| Idle use | Pending — CPU and RSS of the running service |
-| Rollback drill | Pending — record date and timing |
-| Restore drill | Pending — record date, data check and `PRAGMA integrity_check` |
-| Reboot drill | Pending — service and backup timer back without a login |
+| --- | --- |
+| Access | Tailscale MagicDNS `root@zeserver`; sshd is reachable |
+| Authentication from this PC | **Blocked** — no private key in `~/.ssh`; `Permission denied (publickey,password)` |
+| Hardware | Dell Inspiron 1545, Pentium T4300 (2) @ 2.10 GHz, 3.78 GiB RAM, 113.63 GiB disk |
+| OS | Arch Linux, running kernel **7.2.6-arch2-1**, archiso 2025-06-01, Legacy BIOS |
+| Installed kernel modules | `/lib/modules/7.2.11-arch1-1` only, so the running kernel and modules disagree |
+| Root filesystem | `airootfs` overlay with `upperdir` on `/dev/sda2` (ext4); `/dev/sda1` vfat `ARCH_BOOT` |
+| Persistence | Writable overlay on `sda2`; the exact free space must be rechecked before any large operation |
+| Node | **v24.22.1**, npm 12.2.1 |
+| Live database | `/var/lib/lifelogger/life.db`; the package default keeps this filename |
+| Legacy config | `/etc/lifelogger.env` still has `WEB_DIR=apps/web/dist`; it may also set `HOST=0.0.0.0` |
+| Legacy units | Admin units in `/etc/systemd/system/` shadow the packaged units until removed |
+| Legacy tree | `/opt/lifelogger` is unused by the package; leave it until the install is verified |
+| Tailscale | Up; the PC and phone reach the server over the tailnet. No public exposure. |
 
-Do not deploy if `findmnt /` shows an `/run/archiso/cowspace` overlay without a recorded decision: the machine is then the live installer. This server has that decision recorded, with mitigations, in `deploy/README.md`.
+### Accepted risk
 
----
+The owner accepted, in writing on 2026-10-26, that the server is a persistent
+archiso rather than a normal installed system. The decision and its mitigations
+are recorded in `packaging/README.md` under "Accepted risk: persistent archiso
+server": no blind `pacman -Syu`, keep the ISO available, watch overlay space, and
+keep off-machine copies of data and configuration. This redo does not change that
+decision, repair the kernel/module mismatch, or reinstall the host.
 
 ## 9. Quality Gate Checklist
 
-- [x] A fresh clone from GitHub builds and passes all tests.
-- [x] No secrets or absolute local paths in the repository or its history (scan and rewrite verified).
-- [x] `.gitattributes` keeps LF endings, and the scripts are executable in git.
-- [x] `/health` returns the version, schema version and sync protocol version, and is tested.
-- [x] Clean shutdown on `SIGTERM` is tested.
-- [x] Deploy script tests pass with stubs, and `shellcheck` is clean.
-- [ ] The service is enabled, survives a reboot and starts without a login — needs the server.
-- [ ] A tag push deploys and health-checks, and the new version shows in the web UI — needs the server.
-- [ ] The rollback drill and the restore drill passed — simulated in tests; real drills need the server.
-- [ ] The daily backup timer runs, and a backup passes `PRAGMA integrity_check` — needs the server.
-- [ ] Tests and benchmarks pass on the server, and the baseline JSON is saved — needs the server.
-- [x] The benchmark regression guard works (PC comparison and unit/CLI tests).
-- [ ] The PC and the phone sync through the server over Tailscale — needs all three devices.
-- [x] Release tagged `v0.3.5-increment-3.5`.
-
----
+| Gate | Status |
+| --- | --- |
+| Fresh clone builds and 154 tests pass | Pass |
+| No tracked secrets or absolute local paths | Pass |
+| LF endings and executable bits | Pass |
+| `/health` is light and reports version, schema and sync protocol | Pass |
+| Clean `SIGTERM` shutdown | Pass |
+| Packaging input and stub checks | Pass (59) |
+| ShellCheck | Pass (0.11.0, zero findings) |
+| `makepkg` artifact and built-package verification | Pass (29 checks) |
+| Package does not own `/etc/lifelogger.env` or `/var/lib/lifelogger` | Pass |
+| Release assets and checksum | Pass |
+| Server installs and the packaged unit is active | **Pending** |
+| `/health` and web footer show 0.3.6 on the server | **Pending** |
+| Upgrade and rollback drills | **Pending** |
+| Restore drill with `PRAGMA integrity_check` | **Pending** |
+| Service and backup timer survive reboot | **Pending** |
+| Benchmark regression guard | Pass earlier; unchanged |
+| PC and phone sync over Tailscale | **Pending owner** |
 
 ## 10. Risks and Decisions
 
-| Risk | Mitigation / decision |
-|---|---|
-| The server runs the live archiso image, not an installed Arch | Owner accepted the risk in writing on 2026-10-26 after seeing `findmnt /`, `lsblk -f` and the kernel command line. Mitigations: no blind full upgrades, keep the ISO, watch overlay free space, weekly off-machine copies. |
-| Builds exhaust RAM on 3.8 GB | zram, `MemoryMax=1G` on the service, and the documented PC-build fallback. Server build is attempted first. |
-| Windows line endings break the scripts | `.gitattributes` plus shellcheck and the deploy tests; scripts are mode `100755`. |
-| Native SQLite fails on the old CPU | Node 24's built-in `node:sqlite`; run the suite on the server before the first real deploy and record the version. |
-| Android blocks plain HTTP | Preferred transport is HTTPS through Tailscale (`tailscale serve`), so no cleartext build flag is needed. |
-| A bad release locks in a schema change | Migrations stay additive within a release; `deploy.sh` backs up before switching. |
-| Backups share the server disk | The runbook requires periodic copies to the PC and records the last copy date. |
-| History rewrite surprises the owner | The rewrite ran before the GitHub repository was populated; the remote history was force-updated and verified, and a mirror backup is kept locally. |
+| Risk or decision | Mitigation |
+| --- | --- |
+| Persistent archiso host | Accepted in writing; no blind updates, ISO retained, off-machine copies. |
+| Running kernel has no matching modules | Do not reboot without console access; verify `sda1` and `/lib/modules` first. |
+| Package is unsigned | Publish and verify SHA-256; download only from this repository; no third-party repos. |
+| No hosted pacman repository | Release assets plus `pacman -U` or `install-release.sh`; upgrades are explicit. |
+| Tag must exist before the build | `release.sh` pushes the tag, then builds; `build.sh` validates the tag with `git ls-remote`. |
+| Build PC's pacman Node is too old | `build.sh` checks the `PATH` Node and uses `--nodeps` only then; the PKGBUILD still declares `nodejs>=22.5`. |
+| Fastify fails in an ESM bundle | Emit CommonJS and replace `import.meta.url`; verified by the extracted-package smoke test. |
+| Old admin units shadow packaged units | The installer refuses; migration removes the three units first. |
+| Legacy `WEB_DIR=apps/web/dist` | Migration rewrites it to `/usr/lib/lifelogger/web`; the service working directory is `/usr/lib/lifelogger`. |
+| Backups live on the same disk | Documented off-machine copy procedure; daily retention is 14 days. |
+| GitHub renames leading-dot assets | `release.sh` uploads a temp copy named `SRCINFO`; the first release was corrected manually. |
+| Post-release docs commit is ahead of the tag | Tags are built from their own commit; `build.sh` refuses a non-tag HEAD, so future releases need a new tag. |
+| No SSH key on this build PC | Owner must add a key or run the migration commands; the report does not claim the install. |
 
-The repository is public at `github.com/Marvelous616/you`, the owner's choice; the secret and absolute-path scans are the safeguard, and no host details or credentials are committed. The runbook records **A: HTTPS through Tailscale** as the recommended device transport, to be confirmed when the phone first connects.
+## 11. Known Limitations and Deviations
 
----
+- **Server install is not verified.** The package release is complete, but the
+  host still runs the old deploy. This report does not claim otherwise.
+- The earlier version of this report, kept in git history, described the v1
+  tag-push model. This document supersedes it; the v1 tag and release remain as
+  history.
+- The optional server benchmark was not run, because the install is pending.
+- The package is installed with `pacman -U`, not from a hosted repository, so
+  there is no automatic `pacman -Syu` upgrade path by design.
+- The build-PC `--nodeps` workaround is local only; the package metadata is
+  correct for a normal Arch builder.
+- The `lifelogger-backup.timer` is enabled by the installer, but its first real
+  run on the server is part of the pending verification.
 
-## 11. Known Limitations / Next Steps
+## 12. Owner Actions
 
-1. The real deploy, rollback, restore, reboot and build drills are untested on hardware. The deploy tests use stubs because Windows cannot create symlinks without privileges.
-2. The server baseline JSON and the server column of the benchmark table do not exist yet.
-3. Android keeps the server URL and API key only for the current session; durable storage ships with `expo-sqlite` in Increment 4.
-4. HTTPS/cleartext stays an owner decision until confirmed from the phone; the OS is a persistent archiso image, accepted in writing, not an installed system.
-5. The 14-day dual-device dogfooding clock starts after Increment 4 WP 4.1 and Diagnostics, not here.
+1. **SSH access.** Add a public key for this PC or provide a login. From this PC:
 
----
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C lifelogger-build
+   ssh-copy-id root@zeserver      # asks for the root password once
+   ssh root@zeserver true         # must exit 0
+   ```
 
-## 12. Owner Action Checklist
+   Alternatively append the printed `~/.ssh/id_ed25519.pub` to
+   `/root/.ssh/authorized_keys` from the server console. No private key is in the
+   repository.
 
-### 12.1 GitHub (done)
+2. **Approve the migration**, which stops the old service and removes the old
+   admin units. Data and `/etc/lifelogger.env` are not deleted; a copy of the env
+   file is kept.
 
-The repository is published at `https://github.com/Marvelous616/you` (public), with `main` and all four tags. Confirm the rewrite and tags at any time:
+   ```bash
+   systemctl disable --now lifelogger.service lifelogger-backup.timer
+   rm /etc/systemd/system/lifelogger.service \
+      /etc/systemd/system/lifelogger-backup.service \
+      /etc/systemd/system/lifelogger-backup.timer
+   systemctl daemon-reload
+   cp -a /etc/lifelogger.env /etc/lifelogger.env.before-package
+   sed -i 's|^WEB_DIR=.*|WEB_DIR=/usr/lib/lifelogger/web|' /etc/lifelogger.env
+   ```
 
-```bash
-git ls-remote --tags origin
-git log --all -p | grep -cE 'file:///C:/[A-Za-z0-9]'   # must print 0
-```
+3. **Install and verify.** With a checkout available on the server, run
+   `packaging/install-release.sh v0.3.6-increment-3.5`, or download the release
+   asset and run `pacman -U` followed by the two `systemctl enable --now` units.
+   Then check:
 
-The mirror backup outside the repository can be deleted once you are satisfied.
+   ```bash
+   systemctl status lifelogger.service --no-pager
+   curl -fsS http://127.0.0.1:8080/health
+   ```
 
-### 12.2 Prepare the Arch server (done 2026-10-26)
+4. **Drills.** Upgrade, rollback, restore and reboot. The reboot needs console
+   access because of the kernel/module mismatch. Record the timings in this
+   report.
 
-The host is reachable as `root@zeserver` over Tailscale MagicDNS, key-only from the PC. Its root filesystem is the persistent archiso overlay accepted above, and the server Node is v24.22.1 (PC major 24).
-
-```bash
-ssh root@zeserver
-findmnt / && lsblk -f && uname -r
-node -v          # v24.22.1
-```
-
-The repository is public, so the server needs no GitHub credentials:
-
-```bash
-git clone https://github.com/Marvelous616/you.git /root/life-logger
-cd /root/life-logger
-DEPLOY_USER=root ./deploy/server-setup.sh
-systemctl is-enabled lifelogger.service lifelogger-backup.timer
-```
-
-`DEPLOY_USER=root` because root is the only SSH account on the host; `deploy.sh` runs inside `post-receive` as the pushing user. The service itself runs as `lifelogger`.
-
-### 12.3 First deploy and on-host verification
-
-On the PC:
-
-```bash
-git remote add server root@zeserver:/opt/lifelogger/repo.git
-git push server main
-git push server v0.3.5-increment-3.5
-```
-
-On the server:
-
-```bash
-curl -fsS http://127.0.0.1:8080/health
-curl -fsS http://127.0.0.1:8080/ | head
-systemctl status lifelogger
-journalctl -u lifelogger -n 50 --no-pager
-```
-
-The web footer must show `v0.3.5-increment-3.5`. Then run the tests and the benchmark from the release checkout:
-
-```bash
-cd /opt/lifelogger/releases/v0.3.5-increment-3.5
-npm ci
-npm test
-/usr/bin/time -v npm run build
-node tools/bench/dist/index.js --output docs/benchmarks/increment-3.5-server-baseline.json --host-label server
-node tools/bench/dist/index.js --compare docs/benchmarks/increment-3.5-pc-baseline.json
-```
-
-Copy `docs/benchmarks/increment-3.5-server-baseline.json` back to the PC and commit it. Record the build time, peak RSS and idle use in the report's Server facts table.
-
-### 12.4 Tailscale and Android
-
-Tailscale is already installed and up on the server (`zeserver` 100.118.253.6; PC `dainsleif-1`; phone `praneeths-galaxy-s9`). Only the HTTPS front and the app settings remain:
-
-```bash
-ssh root@zeserver
-tailscale serve --bg 8080
-tailscale serve status
-```
-
-Then set `HOST=127.0.0.1` in `/etc/lifelogger.env`, restart the service, and open the `https://<machine>.<tailnet>.ts.net` URL from the phone. Enter that URL and the `API_KEY` from `/etc/lifelogger.env` in the app's **Server Connection** card. Log a marker on the PC, pull on the phone, and reverse. Repeat once with Wi-Fi off on the phone, then record the served URL in the report.
-
-### 12.5 Drills to record
-
-```bash
-# backup and restore
-/opt/lifelogger/backup.sh
-DB_PATH=/tmp/life-logger-restore-drill.db \
-  /opt/lifelogger/restore.sh /var/lib/lifelogger/backups/<file>.db --yes
-sqlite3 /tmp/life-logger-restore-drill.db 'PRAGMA integrity_check;'
-
-# reboot
-reboot
-# after boot:
-systemctl is-active lifelogger lifelogger-backup.timer
-systemctl list-timers lifelogger-backup.timer
-```
-
-Rollback drill: push a throwaway tag whose `/health` fails (for example, start the service with a broken `DB_PATH`), confirm the previous release returns, then delete the tag. Record the timing.
-
----
+5. **Connectivity.** Confirm the PC and phone can log events both ways over
+   Tailscale, and decide whether to move from `HOST=0.0.0.0` to `tailscale serve`
+   with `HOST=127.0.0.1`.
 
 ## 13. Release State
 
-The release commit and annotated tag are published at `github.com/Marvelous616/you`. Confirm:
+| Item | Value |
+| --- | --- |
+| Release | `https://github.com/Marvelous616/you/releases/tag/v0.3.6-increment-3.5` |
+| Tag | `v0.3.6-increment-3.5` (annotated) |
+| Commit | `5e054bc` |
+| Package | `lifelogger-0.3.6-1-any.pkg.tar.zst` |
+| Size | 447,684 bytes (437 KiB) |
+| SHA-256 | `cd568fb4714b862260833cd2fb6069d575d7486cd358c16bd502009a513bb85e` |
+| Assets | package, package `.sha256`, `PKGBUILD`, `SRCINFO` |
+| Server state | Old deploy still active; package install pending SSH access |
+| Drills | Pending |
 
-```bash
-git log --oneline -1
-git describe --tags --exact-match HEAD   # v0.3.5-increment-3.5
-git ls-remote origin
-```
+The package was built and tested on this PC, not on the Pentium server. The
+server only needs `pacman`, Node and `sqlite`, all of which it already has.

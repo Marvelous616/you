@@ -194,7 +194,8 @@ Acceptance:
 ### WP 3.5.4: Publish and migrate
 
 - Push `main`, tag `v0.3.6-increment-3.5` and publish a GitHub release with the
-  package, `.sha256`, `PKGBUILD` and `.SRCINFO`.
+  package, `.sha256`, `PKGBUILD` and `SRCINFO` (a copy of the repository's
+  `.SRCINFO`; GitHub renames leading-dot assets).
 - Record the release URL, artifact size and checksum.
 - Server migration, once:
   1. Disable and remove the old admin units in `/etc/systemd/system/` so the
@@ -326,7 +327,7 @@ systemctl restart lifelogger.service
       could not run).
 - [ ] `makepkg` produces the package, and `verify-package.sh` passes.
 - [ ] The package does not own `/etc/lifelogger.env` or `/var/lib/lifelogger`.
-- [ ] The GitHub release has the package, `.sha256`, `PKGBUILD` and `.SRCINFO`.
+- [ ] The GitHub release has the package, `.sha256`, `PKGBUILD` and `SRCINFO`.
 - [ ] The server installs the package; the packaged unit is active and enabled.
 - [ ] `/health` and the web footer report the packaged version.
 - [ ] Upgrade and rollback drills pass; the previous package is cached.

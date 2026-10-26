@@ -58,6 +58,8 @@ packaging/src/
 packaging/pkg/
 packaging/*.pkg.tar.zst
 packaging/*.pkg.tar.zst.sha256
+# makepkg keeps a bare git source clone here (SRCDEST defaults to the PKGBUILD dir)
+packaging/lifelogger-*/
 
 # OS files
 .DS_Store

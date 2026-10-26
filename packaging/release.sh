@@ -60,11 +60,16 @@ echo "== Building the package =="
 packaging/build.sh
 
 echo "== Creating the GitHub release =="
+# GitHub renames a leading-dot asset; upload the generated metadata under a
+# plain SRCINFO name while keeping .SRCINFO in the repository.
+SRCINFO_DIR="$(mktemp -d)"
+trap 'rm -rf "$SRCINFO_DIR"' EXIT
+cp packaging/.SRCINFO "$SRCINFO_DIR/SRCINFO"
 gh release create "${TAG}" \
   "${ARTIFACT}" \
   "${ARTIFACT}.sha256" \
   packaging/PKGBUILD \
-  packaging/.SRCINFO \
+  "$SRCINFO_DIR/SRCINFO" \
   --repo "$REPO" \
   --title "Life Logger ${PKGVER}" \
   --notes "Pacman package for Life Logger ${PKGVER}.

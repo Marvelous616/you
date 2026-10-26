@@ -130,7 +130,9 @@ packaging/release.sh
 
 It requires a clean `main`, `gh` authentication and a matching `.SRCINFO`. It
 pushes `main` and the annotated tag, builds the package from that tag, and creates
-the GitHub release with the package, checksum, `PKGBUILD` and `.SRCINFO`.
+the GitHub release with the package, checksum, `PKGBUILD` and `SRCINFO` (a copy
+of `packaging/.SRCINFO`, because GitHub renames assets whose names start with a
+dot).
 
 If the build fails after the tag is pushed, the tag exists without a release. Fix
 the tree, move the tag (`git tag -f ... && git push --force origin <tag>`) and run
