@@ -5,8 +5,8 @@
 > **Git Release Tag:** `v0.3.6-increment-3.5`
 > **Date:** October 26, 2026
 > **Status:** Package built and published from this PC; installed and verified on
-> `zeserver`. Backup, restore and same-version reinstall drills passed. A true
-> version upgrade, rollback and reboot drill remain pending.
+> `zeserver`. Backup, scratch restore and same-version reinstall drills passed.
+> True version upgrade, rollback and reboot drills remain pending.
 
 ---
 
