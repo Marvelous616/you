@@ -1,0 +1,3 @@
+# Creates the unprivileged account that runs Life Logger. The package ships this
+# in /usr/lib/sysusers.d; systemd-sysusers creates the user on install and boot.
+u lifelogger - "Life Logger" /var/lib/lifelogger /usr/bin/nologin

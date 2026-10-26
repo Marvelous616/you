@@ -53,8 +53,11 @@ coverage/
 .env.*
 !.env.example
 
-# Deploy runtime state created on the server
-deploy/.deploy.lock
+# Pacman package build output
+packaging/src/
+packaging/pkg/
+packaging/*.pkg.tar.zst
+packaging/*.pkg.tar.zst.sha256
 
 # OS files
 .DS_Store

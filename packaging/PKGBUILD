@@ -1,0 +1,57 @@
+# Maintainer: Life Logger owner <noreply@example.invalid>
+pkgname=lifelogger
+pkgver=0.3.6
+pkgrel=1
+pkgdesc='Personal offline-first timeline and life event tracker'
+arch=('any')
+url='https://github.com/Marvelous616/you'
+license=('custom')
+depends=('nodejs>=22.5' 'sqlite')
+makedepends=('git' 'nodejs' 'npm')
+install=lifelogger.install
+_tag="v${pkgver}-increment-3.5"
+source=("$pkgname-$pkgver::git+${url}.git#tag=${_tag}")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+  npm ci --no-audit --no-fund --ignore-scripts
+  npm run build
+  node packaging/bundle-server.mjs "$srcdir/build/server.cjs"
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  npm test
+  npm run --workspace=@life-logger/android typecheck
+  bash packaging/test/run.sh
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+
+  install -d "$pkgdir/usr/lib/lifelogger"
+  install -m0644 "$srcdir/build/server.cjs" "$pkgdir/usr/lib/lifelogger/server.cjs"
+
+  install -d "$pkgdir/usr/lib/lifelogger/web"
+  cp -a apps/web/dist/. "$pkgdir/usr/lib/lifelogger/web/"
+
+  install -m0755 packaging/backup.sh "$pkgdir/usr/lib/lifelogger/backup.sh"
+  install -m0755 packaging/restore.sh "$pkgdir/usr/lib/lifelogger/restore.sh"
+  install -m0644 packaging/lifelogger.env "$pkgdir/usr/lib/lifelogger/lifelogger.env"
+  install -Dm0755 packaging/lifelogger-runner "$pkgdir/usr/bin/lifelogger"
+  printf 'APP_VERSION=%s\n' "$pkgver" >"$pkgdir/usr/lib/lifelogger/version.env"
+  chmod 0644 "$pkgdir/usr/lib/lifelogger/version.env"
+
+  install -Dm0644 packaging/lifelogger.service \
+    "$pkgdir/usr/lib/systemd/system/lifelogger.service"
+  install -Dm0644 packaging/lifelogger-backup.service \
+    "$pkgdir/usr/lib/systemd/system/lifelogger-backup.service"
+  install -Dm0644 packaging/lifelogger-backup.timer \
+    "$pkgdir/usr/lib/systemd/system/lifelogger-backup.timer"
+
+  install -Dm0644 packaging/lifelogger.sysusers "$pkgdir/usr/lib/sysusers.d/lifelogger.conf"
+  install -Dm0644 packaging/lifelogger.tmpfiles "$pkgdir/usr/lib/tmpfiles.d/lifelogger.conf"
+
+  install -Dm0644 packaging/README.md "$pkgdir/usr/share/doc/lifelogger/README.md"
+}

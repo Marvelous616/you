@@ -6,10 +6,10 @@ Life Logger runs as a local web app on the PC, a React Native companion on Andro
 
 ## Requirements
 
-- Node.js 24 (tested with v24.19.0). Node 24 provides the built-in `node:sqlite` driver, so no native module build is required.
+- Node.js 22.5 or newer; Node 24 is what the server runs (v24.22.1). The built-in `node:sqlite` driver needs 22.5, so no native module build is required.
 - npm 10 or newer.
 - Linux with systemd for the always-on server. Development works on Windows, macOS or Linux.
-- `bash` and `shellcheck` only if you want to run the deployment-script tests and lint locally.
+- Arch Linux with `base-devel` to build the package. `bash` and `shellcheck` are needed for the packaging checks.
 
 ## Install
 
@@ -36,14 +36,15 @@ npm run --workspace=@life-logger/web build
 # Android type check
 npm run --workspace=@life-logger/android typecheck
 
-# Deployment scripts (uses Git Bash on Windows)
-npm run test:deploy
+# Packaging checks: static package inputs, the esbuild bundle and script stubs
+# (run `npm run build` first)
+npm run test:package
 
-# Lint the deployment scripts (shellcheck must be on PATH)
-shellcheck deploy/*.sh deploy/post-receive deploy/test/*.sh
+# Lint the packaging scripts (shellcheck must be on PATH)
+npm run shellcheck
 ```
 
-The server tests cover `/health` (ok and database failure), environment parsing, static web serving, API-key protection and graceful shutdown. The deploy test uses stubs for `systemctl`, `curl`, `sqlite3`, `git`, `npm`, `flock`, `ln` and `readlink`; it proves that a successful deploy moves the `current` pointer, that a failed health check rolls back, and that invalid tags are refused.
+The server tests cover `/health` (ok and database failure), environment parsing, static web serving, API-key protection and graceful shutdown. The packaging checks prove that the PKGBUILD version matches `package.json`, that the installed unit paths are the packaged ones, that the esbuild bundle starts and serves `/health` without `node_modules`, and that backup, restore and the release installer behave as documented under stubs.
 
 ## Build
 
@@ -53,6 +54,25 @@ npm run --workspace=@life-logger/web build
 ```
 
 The server build outputs to `apps/server/dist`. The web build outputs to `apps/web/dist`, which the server serves directly.
+
+## Package
+
+The server deployable is an Arch Linux package, built on the development PC and
+published as a GitHub release asset. The package bundles the server into one
+CommonJS file, ships the Vite output, and installs the systemd units, service
+account, backup scripts and `/usr/lib/lifelogger` assets. It never owns
+`/var/lib/lifelogger` or `/etc/lifelogger.env`.
+
+```bash
+# once per release, after bumping package.json and packaging/PKGBUILD
+cd packaging && makepkg --printsrcinfo > .SRCINFO && cd ..
+git commit -am "release: 0.3.6"
+packaging/release.sh        # pushes the tag, builds, publishes the GitHub release
+```
+
+`packaging/README.md` is the runbook: package layout, build and publish steps,
+server migration from the old tag deploy, install, upgrade, rollback, backups,
+restore, logs and verification drills.
 
 ## Run
 
@@ -84,7 +104,7 @@ Android companion:
 npm run --workspace=@life-logger/android start
 ```
 
-Set the server address in the app's connection settings. `http://10.0.2.2:4000` is the Android emulator alias for the development PC; a real phone needs the server's LAN or Tailscale name. See `deploy/README.md` for the HTTPS versus cleartext decision.
+Set the server address in the app's connection settings. `http://10.0.2.2:4000` is the Android emulator alias for the development PC; a real phone needs the server's LAN or Tailscale name. See `packaging/README.md` for the HTTPS versus cleartext decision.
 
 ## Configuration
 
@@ -107,7 +127,7 @@ The server reads every setting from the environment. `.env.example` documents th
 {
   "status": "ok",
   "database": "connected",
-  "version": "v0.3.5-increment-3.5",
+  "version": "0.3.6",
   "schemaVersion": 3,
   "syncProtocolVersion": 1,
   "timestamp": "2026-10-25T00:00:00.000Z"
@@ -126,7 +146,7 @@ The probe is a single `SELECT 1`; it does not scan application tables. A databas
 - [`apps/android`](./apps/android): React Native / Expo companion app featuring quick-entry parsing, one-tap offline marker capture (< 50ms), a mini day timeline, offline review, an offline suggestion inbox with ICS paste import, automatic outbox synchronization, and a configurable server address.
 - [`tools/bench`](./tools/bench): Synthetic dataset generator, benchmark harness, regression comparison and JSON output.
 - [`scripts/`](./scripts): Local Windows backup and sandbox disaster-recovery helpers.
-- [`deploy/`](./deploy): Arch provisioning, systemd units, tag-triggered deploy, backup, restore and the server runbook.
+- [`packaging/`](./packaging): PKGBUILD, build and release scripts, systemd units, sysusers/tmpfiles, backup, restore, the release installer and the server runbook.
 - [`docs/benchmarks`](./docs/benchmarks): Recorded benchmark baselines.
 - [`docs/reports`](./docs/reports): Increment completion reports.
 
@@ -180,13 +200,22 @@ The harness records CPU model, core count, total memory, Node version, platform,
 
 ## Deployment
 
-The always-on server runs the same code as a systemd service behind a tag-triggered deploy:
+The always-on server installs a pacman package from a GitHub release:
 
 ```bash
-git tag v0.4.0-increment-4
-git push server main --tags
+# on the PC
+packaging/release.sh
+
+# on the server
+packaging/install-release.sh v0.4.0-increment-4
 ```
 
-`deploy/README.md` is the runbook: first install, server preparation, normal deploy, manual and automatic rollback, restore, backups, logs, Node upgrades, troubleshooting and the verification drills. The deploy scripts are shellcheck-clean and use stubs in tests, so the first real run is not the first run.
+`packaging/install-release.sh` verifies the published checksum, installs with
+`pacman -U`, enables the service and backup timer, restarts the service, waits for
+`/health` to report the new version and reinstalls the cached previous package if
+it does not. The package is unsigned; verify the `.sha256` and download only from
+this repository's releases.
 
-Secrets, private keys, keystores and real LAN addresses are never committed. Server settings belong in `/etc/lifelogger.env`, which the provisioning script creates with a generated API key.
+Secrets, private keys, keystores and real LAN addresses are never committed.
+Server settings belong in `/etc/lifelogger.env`, which is outside the package and
+keeps the generated API key across installs and upgrades.

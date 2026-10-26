@@ -1,6 +1,6 @@
 {
   "name": "life-logger",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "private": true,
   "description": "Life Logger - personal offline-first timeline and life event tracker",
   "workspaces": [
@@ -14,11 +14,14 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b",
     "lint": "npm run --workspaces --if-present lint",
-    "test:deploy": "node scripts/run-bash.mjs deploy/test/deploy.test.sh",
-    "shellcheck": "shellcheck deploy/*.sh deploy/post-receive deploy/test/*.sh"
+    "package": "bash packaging/build.sh",
+    "release": "bash packaging/release.sh",
+    "test:package": "node scripts/run-bash.mjs packaging/test/run.sh",
+    "shellcheck": "shellcheck packaging/*.sh packaging/test/*.sh"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "esbuild": "^0.21.5",
     "typescript": "^5.5.4",
     "vitest": "^2.1.2"
   }

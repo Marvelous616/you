@@ -1,0 +1,18 @@
+# shellcheck shell=bash
+post_install() {
+  cat <<'EOF'
+Life Logger is installed but not running yet.
+
+  systemctl enable --now lifelogger.service lifelogger-backup.timer
+
+Settings are read from /usr/lib/lifelogger/lifelogger.env and then overridden by
+/etc/lifelogger.env. Existing installs that still set a relative WEB_DIR must
+change it to WEB_DIR=/usr/lib/lifelogger/web.
+
+Data lives in /var/lib/lifelogger and is not owned by this package.
+EOF
+}
+
+post_upgrade() {
+  post_install
+}

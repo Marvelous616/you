@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs the packaged Life Logger server in the foreground with the same
+# environment contract as the systemd unit. The unit is the normal entry point;
+# this wrapper exists for a quick manual start or a version check.
+exec /usr/bin/node /usr/lib/lifelogger/server.cjs "$@"

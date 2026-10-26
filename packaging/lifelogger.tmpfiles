@@ -1,0 +1,4 @@
+# Runtime state lives outside the package so upgrades and removals never touch
+# the database or its backups.
+d /var/lib/lifelogger 0750 lifelogger lifelogger -
+d /var/lib/lifelogger/backups 0750 lifelogger lifelogger -
