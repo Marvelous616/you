@@ -1,0 +1,32 @@
+[Unit]
+Description=Life Logger
+Documentation=https://github.com/Marvelous616/you
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lifelogger
+Group=lifelogger
+WorkingDirectory=/opt/lifelogger/releases/current
+EnvironmentFile=/opt/lifelogger/releases/current/lifelogger.env
+EnvironmentFile=-/etc/lifelogger.env
+EnvironmentFile=-/opt/lifelogger/releases/current/version.env
+ExecStart=/usr/local/bin/node /opt/lifelogger/releases/current/server.cjs
+Restart=always
+RestartSec=2
+TimeoutStopSec=20
+KillSignal=SIGTERM
+MemoryMax=1G
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/lifelogger
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lifelogger
+
+[Install]
+WantedBy=multi-user.target

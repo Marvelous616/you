@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Life Logger database backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=15m
+Unit=lifelogger-backup.service
+
+[Install]
+WantedBy=timers.target

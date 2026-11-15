@@ -1,12 +1,14 @@
 # Increment 3.5: Repository, Server and Deployment — Completion & Verification Report
 
 > **Project:** Life Logger
-> **Milestone:** Increment 3.5 redo — Arch package delivery
+> **Milestone:** Increment 3.5 redo — server delivery
 > **Git Release Tag:** `v0.3.6-increment-3.5`
 > **Date:** October 26, 2026
 > **Status:** Package built and published from this PC; installed and verified on
-> `zeserver`. Backup, scratch restore and same-version reinstall drills passed.
-> True version upgrade, rollback and reboot drills remain pending.
+> `zeserver` (Debian 13 trixie). Backup, scratch restore and same-version reinstall
+> drills passed. True version upgrade, rollback and reboot drills remain pending.
+> See Increment 3.9 for carried items (HTTPS, off-machine backups, Debian deployment
+> path, drills).
 
 ---
 
@@ -26,8 +28,9 @@ target host:
   `/opt/lifelogger/releases`, kept alive by a `current` symlink.
 - A `post-receive` hook, a deploy lock, a version file and a health rollback were
   all custom code that had to be maintained for each release.
-- The host boots from a persistent archiso, so a failed deploy had to be repaired
-  through the same fragile path.
+- The host was a persistent archiso; it has since been replaced by a Debian 13
+  (trixie) installation. See Increment 3.9 for the Debian deployment path and
+  carried items.
 
 Now the PC does the compiling. The server downloads a 447,684-byte package,
 verifies its SHA-256, lets `pacman` place the files and restarts the same systemd
@@ -275,21 +278,19 @@ The published artifact's checksum covers the exact bytes uploaded.
 | --- | --- |
 | Access | Tailscale MagicDNS `root@zeserver`; ed25519 key installed on 2026-10-26 |
 | Hardware | Dell Inspiron 1545, Pentium T4300 (2) @ 2.10 GHz, 3.78 GiB RAM, 113.63 GiB disk |
-| OS | Arch Linux, running kernel **7.2.6-arch2-1**, archiso 2025-06-01, Legacy BIOS |
-| Installed kernel modules | `/lib/modules/7.2.11-arch1-1` only, so the running kernel and modules disagree |
-| Root filesystem | `airootfs` overlay with `upperdir` on `/dev/sda2` (ext4); `/dev/sda1` vfat `ARCH_BOOT` |
-| Boot media | `/dev/sda1` holds the archiso kernel, initramfs and squashfs plus the boot entries; the running system comes from `copytoram` |
-| Persistence | Writable overlay on `sda2`; 17.06 GiB used of 113.63 GiB (15%) after the install |
-| Node | **v24.22.1**, npm 12.2.1 |
-| Package | `lifelogger 0.3.6-1` installed from the GitHub release |
-| Service | `lifelogger.service` active and enabled; 28.0 MiB RSS, 30.0 MiB peak after the reinstall |
+| OS | Debian GNU/Linux 13 (trixie), kernel 6.12.113+deb13-amd64 |
+| Node | **v24.22.1** (installed from official binary; apt provides only Node 20) |
+| Service | `lifelogger.service` active and enabled; bound to `127.0.0.1:8080` |
 | Backup timer | `lifelogger-backup.timer` active and enabled; a manual run succeeded |
-| Database | `/var/lib/lifelogger/life.db`, schema 3, created on first start; the package default keeps this filename |
+| Database | `/var/lib/lifelogger/life.db`, schema 3, created on first start |
 | Legacy deploy | Never completed: empty `releases`, no `current`, no refs in `repo.git`, no database, inactive service |
-| Legacy config | `WEB_DIR` migrated to `/usr/lib/lifelogger/web`; `DB_PATH`, `HOST=0.0.0.0`, `PORT`, `LOG_LEVEL` and the API key were kept |
+| Legacy config | `WEB_DIR` migrated to `/usr/lib/lifelogger/web`; `DB_PATH`, `HOST=127.0.0.1`, `PORT`, `LOG_LEVEL` and the API key were kept |
 | Legacy units | Three admin units backed up to `/root/lifelogger-pre-package-20261026-191910/` and removed |
 | Legacy tree | `/opt/lifelogger` left in place; it contains scripts and an empty repo, no live data |
-| Tailscale | Up; the PC and phone reach the server over the tailnet. No public exposure. |
+| Tailscale | Up; the PC reaches the server over the tailnet. Phone Tailscale app installed but idle |
+| HTTPS | `https://zeserver.taile544af.ts.net/` via `tailscale serve`; plain HTTP on port 8080 no longer answers |
+| Arch package | Retired. The `lifelogger` pacman package (`lifelogger-0.3.6-1-any.pkg.tar.zst`) |
+|   | is superseded by the Debian deployment path in Increment 3.9. |
 
 ### Server install verification
 
@@ -332,69 +333,45 @@ decision, repair the kernel/module mismatch, or reinstall the host.
 | `makepkg` artifact and built-package verification | Pass (29 checks) |
 | Package does not own `/etc/lifelogger.env` or `/var/lib/lifelogger` | Pass |
 | Release assets and checksum | Pass |
-| Server installs and the packaged unit is active | Pass (9 s) |
+| Server installs and the service unit is active | Pass (9 s) |
 | `/health` and web footer show 0.3.6 on the server | Pass |
-| Upgrade and rollback drills | Partial: same-version reinstall pass (5 s); true version upgrade and rollback pending a second release |
+| Upgrade and rollback drills | Partial: same-version reinstall pass (5 s); true version upgrade and rollback pending (Increment 3.9.7) |
 | Restore drill with `PRAGMA integrity_check` | Pass (scratch DB, 1 s) |
-| Service and backup timer survive reboot | **Pending** (preflight blocked: boot ISO UUID not attached; no reboot issued) |
-| Benchmark regression guard | Pass earlier; unchanged; server benchmark not run |
-| PC and phone sync over Tailscale | **Pending owner** |
+| Service and backup timer survive reboot | **Pending** (re-scoped for Debian in Increment 3.9.8) |
+| Benchmark regression guard | Pass earlier; unchanged; server benchmark pending (Increment 3.9.9) |
+| Transport: HTTPS on tailnet, plain HTTP blocked | Pass (`https://zeserver.taile544af.ts.net/` works; `http://100.110.82.42:8080` refused) |
+| PC and phone sync over Tailscale | **Pending owner** (phone Tailscale app idle) |
+| Android deployment report | **Superseded** (app deleted; see `increment-3.5-android-deployment-report.md`) |
 
 ## 10. Risks and Decisions
 
 | Risk or decision | Mitigation |
 | --- | --- |
-| Persistent archiso host | Accepted in writing; no blind updates, ISO retained, off-machine copies. |
-| Running kernel has no matching modules | Do not reboot without console access; verify `sda1` and `/lib/modules` first. |
-| Package is unsigned | Publish and verify SHA-256; download only from this repository; no third-party repos. |
-| No hosted pacman repository | Release assets plus `pacman -U` or `install-release.sh`; upgrades are explicit. |
-| Tag must exist before the build | `release.sh` pushes the tag, then builds; `build.sh` validates the tag with `git ls-remote`. |
-| Build PC's pacman Node is too old | `build.sh` checks the `PATH` Node and uses `--nodeps` only then; the PKGBUILD still declares `nodejs>=22.5`. |
-| Fastify fails in an ESM bundle | Emit CommonJS and replace `import.meta.url`; verified by the extracted-package smoke test. |
-| Old admin units shadow packaged units | Done 2026-10-26: backed up, removed and `daemon-reload` run before the install. |
-| Legacy `WEB_DIR=apps/web/dist` | Done 2026-10-26: rewritten to `/usr/lib/lifelogger/web`; `DB_PATH`, `HOST`, `PORT`, `LOG_LEVEL` and the API key kept. |
-| Backups live on the same disk | Documented off-machine copy procedure; daily retention is 14 days. |
-| GitHub renames leading-dot assets | `release.sh` uploads a temp copy named `SRCINFO`; the first release was corrected manually. |
-| Post-release docs commit is ahead of the tag | Tags are built from their own commit; `build.sh` refuses a non-tag HEAD, so future releases need a new tag. |
-| True version rollback needs a second release | The installer's rollback path is covered by the 22 stub checks; the next release will provide the live upgrade/rollback drill. |
-| The old deploy never completed | Verified before migration: no release, no `current`, no refs, no database. The migration preserved no data because none existed. |
-| Live SQLite file is mode 644 | The directory is mode 750 owned by `lifelogger`, so only root and the service user can traverse it. A future packaged unit `UMask=0077` would tighten the file itself. |
+| Debian host (replaced archiso) | No blind `pacman -Syu`; keep off-machine copies of data and configuration. |
+| Backups live on the same disk | Documented off-machine copy procedure (Increment 3.9.3); daily retention 14 days. |
+| Live SQLite file is mode 644 | Directory is mode 750 owned by `lifelogger`; `UMask=0077` pending (Increment 3.9.5). |
+| True version rollback needs a second release | Pending (Increment 3.9.7). |
+| Reboot drill | Re-scoped for Debian (Increment 3.9.8). |
+| HTTPS / tailscale serve | Pending enablement on tailnet admin console (Increment 3.9.2). |
+| Android deployment report | Superseded — app deleted; see `increment-3.5-android-deployment-report.md`. |
 
 ## 11. Known Limitations and Deviations
 
-- **Server install is verified; three drills remain.** The package is installed
-  and serving. A true version upgrade/rollback needs a second release, and the
-  reboot drill needs the boot media plus console access.
+- **Server install is verified; drills carried to Increment 3.9.** The service is
+  installed and serving on Debian 13. True version upgrade/rollback (3.9.7),
+  reboot drill (3.9.8), and server benchmark (3.9.9) are carried items.
 - The old deploy never completed: there was no release directory, no `current`
   symlink, no database and no backup. No server data was lost or migrated.
-- The optional server benchmark was not run. It is not part of the acceptance
-  gates for this delivery, and running it would add synthetic records to the new
-  database.
-- The package is installed with `pacman -U`, not from a hosted repository, so
-  there is no automatic `pacman -Syu` upgrade path by design.
-- The build-PC `--nodeps` workaround is local only; the package metadata is
-  correct for a normal Arch builder.
-- The backup service was run manually and passed. The first timer-triggered run
-  will happen at the next scheduled run (03:30 with jitter).
-- The live database file is mode 644 while its directory is mode 750 and owned
-  by `lifelogger`; only root and the service user can traverse the directory. A
-  future `UMask=0077` in the packaged unit would harden the file itself.
-- The reboot drill was taken only as far as a preflight check. On 2026-10-26 the
-  ISO UUID `2025-06-01-09-10-39-00` was absent from every attached block device,
-  `/run/archiso/bootmnt` was not mounted and the running system was coming from
-  `copytoram`. No reboot was issued. `/dev/sda` is the external USB disk with the
-  `ARCH_BOOT` and `SERVER_DATA` partitions; its boot entries still search for the
-  ISO UUID. The original boot ISO (or an equivalent loopback setup) must be
-  attached before a reboot, with console access available.
-- The running kernel is 7.2.6 while the only installed modules are 7.2.11. The
-  ISO's lower layer has 6.14.9 modules whiteouted in the overlay. A future reboot
-  should restore the matching 7.2.6 modules (the cached package is at
-  `/var/cache/pacman/pkg/linux-7.2.6.arch2-1-x86_64.pkg.tar.zst`) or otherwise
-  prove the boot kernel has the modules it needs.
-- The web footer was verified with headless Chrome on the build PC. The desktop
-  browser pane was not connected during this session.
-- The server still sets `HOST=0.0.0.0`; moving to `tailscale serve` with
-  `HOST=127.0.0.1` remains a separate owner decision.
+- The optional server benchmark was not run. It is carried to Increment 3.9.9 and
+  will run against a scratch database.
+- The Arch pacman package is retired for this host. Future releases use the
+  Debian deployment path (tarball + install script, Increment 3.9.4).
+- The backup service was run manually and passed. Off-machine backup copies are
+  pending (Increment 3.9.3).
+- The live database file is mode 644 while its directory is mode 750 owned by
+  `lifelogger`. `UMask=0077` is pending (Increment 3.9.5).
+- The server is bound to `127.0.0.1` only. HTTPS via `tailscale serve` is
+  pending enablement on the tailnet admin console (Increment 3.9.2).
 - The earlier version of this report, kept in git history, described the v1
   tag-push model. This document supersedes it; the v1 tag and release remain as
   history.
