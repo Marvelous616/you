@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Suggestion, SuggestionOverrides, parseQuickEntry } from '@life-logger/domain';
 import {
-  DayTimeline,
+  Event,
+  Suggestion,
+  SuggestionOverrides,
+  parseQuickEntry,
+} from '@life-logger/domain';
+import {
   acceptSuggestion,
   createEvent,
   fetchActiveDay,
@@ -12,15 +16,19 @@ import {
   reviewDay,
   saveJournal,
   updateDay,
+  type DayTimeline,
 } from '../api.js';
-import { Timeline } from '../components/Timeline.js';
-import { QuickEntry } from '../components/QuickEntry.js';
-import { EventList } from '../components/EventList.js';
-import { Markers } from '../components/Markers.js';
-import { Journal } from '../components/Journal.js';
-import { ReviewModal } from '../components/ReviewModal.js';
-import { ServerStatus } from '../components/ServerStatus.js';
-import { SuggestionCard } from '../components/SuggestionCard.js';
+import { Timeline } from '../components/Timeline';
+import { QuickEntry } from '../components/QuickEntry';
+import { EventList } from '../components/EventList';
+import { Markers } from '../components/Markers';
+import { Journal } from '../components/Journal';
+import { ReviewModal } from '../components/ReviewModal';
+import { ServerStatus } from '../components/ServerStatus';
+import { SuggestionCard } from '../components/SuggestionCard';
+import { SuggestionEdit } from '../components/SuggestionEdit';
+import { EventDetail } from '../components/EventDetail';
+import { Settings } from './Settings';
 
 function newId(prefix: string): string {
   const random =
@@ -35,13 +43,23 @@ function formatClock(iso?: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export const DayView: React.FC = () => {
+interface DayViewProps {
+  onSettingsOpen: () => void;
+}
+
+export const DayView: React.FC<DayViewProps> = ({ onSettingsOpen }) => {
   const [timeline, setTimeline] = useState<DayTimeline | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [journalDraft, setJournalDraft] = useState('');
+
+  // Modals
+  const [eventDetailOpen, setEventDetailOpen] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [suggestionEditOpen, setSuggestionEditOpen] = useState(false);
+  const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -148,7 +166,7 @@ export const DayView: React.FC = () => {
       setTimeline(refreshed);
       return refreshed.gaps;
     },
-    [timeline]
+    [timeline, loadData]
   );
 
   const handleAcceptSuggestion = useCallback(
@@ -166,6 +184,22 @@ export const DayView: React.FC = () => {
     },
     [loadData]
   );
+
+  const handleEventUpdated = useCallback(async () => {
+    await loadData();
+    setEventDetailOpen(false);
+    setSelectedEventId(null);
+  }, [loadData]);
+
+  const handleEventClick = useCallback((event: Event) => {
+    setSelectedEventId(event.id);
+    setEventDetailOpen(true);
+  }, []);
+
+  const handleSuggestionEdit = useCallback((suggestion: Suggestion) => {
+    setSelectedSuggestionId(suggestion.id);
+    setSuggestionEditOpen(true);
+  }, []);
 
   const handleSaveJournal = useCallback(async (body: string) => {
     if (!timeline) return;
@@ -209,12 +243,29 @@ export const DayView: React.FC = () => {
             <span>{day ? day.localDate : '—'}</span>
           </div>
           <ServerStatus onRetry={handleRetry} />
+          <button
+            type="button"
+            className="nav-item"
+            onClick={() => onSettingsOpen()}
+          >
+            Settings
+          </button>
         </div>
       </header>
 
       <div className="content">
         {error && (
-          <div style={{ background: '#450a0a', border: '1px solid #7f1d1d', color: '#f87171', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem' }}>
+          <div
+            style={{
+              backgroundColor: '#450a0a',
+              border: '1px solid #7f1d1d',
+              color: '#f87171',
+              padding: '10px 14px',
+              borderRadius: '8px',
+              marginBottom: '16px',
+              fontSize: '0.85rem',
+            }}
+          >
             Server connection notice: {error}
           </div>
         )}
@@ -232,7 +283,11 @@ export const DayView: React.FC = () => {
                   </div>
                 </div>
                 {!day.wakeAt && (
-                  <button className="btn btn-primary btn-sm" onClick={handleWake} disabled={!day}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleWake}
+                    disabled={!day}
+                  >
                     Wake up
                   </button>
                 )}
@@ -248,14 +303,12 @@ export const DayView: React.FC = () => {
               eventTags={eventTags}
               tags={allTags}
               gaps={gaps}
-              onEventClick={() => {
-                // TODO: open event detail
-              }}
+              onEventClick={handleEventClick}
             />
 
             <QuickEntry
-              tags={allTags.map((t) => ({ id: t.id, path: t.path }))}
-              people={allPeople.map((p) => ({ id: p.id, displayName: p.displayName }))}
+              tags={allTags.map((t: { id: string; path: string }) => ({ id: t.id, path: t.path }))}
+              people={allPeople.map((p: { id: string; displayName: string }) => ({ id: p.id, displayName: p.displayName }))}
               onSubmit={handleQuickEntry}
             />
 
@@ -267,9 +320,7 @@ export const DayView: React.FC = () => {
                 events={events}
                 eventTags={eventTags}
                 tags={allTags}
-                onEventClick={() => {
-                  // TODO: open event detail
-                }}
+                onEventClick={handleEventClick}
               />
             </div>
 
@@ -300,7 +351,7 @@ export const DayView: React.FC = () => {
               </p>
             ) : (
               suggestions.map((s) => (
-                <div key={s.id}>
+                <div key={s.id} style={{ marginBottom: '12px' }}>
                   <SuggestionCard
                     suggestion={s}
                     busy={false}
@@ -308,7 +359,7 @@ export const DayView: React.FC = () => {
                     onAccept={handleAcceptSuggestion}
                     onReject={handleRejectSuggestion}
                     onEdit={async (_id: string, _overrides: SuggestionOverrides) => {
-                      // TODO: implement edit
+                      handleSuggestionEdit(s);
                     }}
                   />
                 </div>
@@ -329,6 +380,22 @@ export const DayView: React.FC = () => {
             busy={isLoading}
           />
         )}
+
+        <EventDetail
+          eventId={selectedEventId ?? ''}
+          isOpen={eventDetailOpen}
+          onClose={() => setEventDetailOpen(false)}
+          onEventUpdated={handleEventUpdated}
+        />
+
+        <SuggestionEdit
+          suggestion={suggestions.find((s) => s.id === selectedSuggestionId) ?? suggestions[0]}
+          isOpen={suggestionEditOpen}
+          onClose={() => setSuggestionEditOpen(false)}
+          onSuggestionUpdated={loadData}
+        />
+
+        <Settings onClose={() => onSettingsOpen()} />
       </div>
 
       <footer className="footer">

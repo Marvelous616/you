@@ -60,6 +60,8 @@ export interface Tag extends EntityMetadata {
   path: string;
   color?: string;
   parentId?: UUID;
+  /** Nullable timestamp; archived tags stay on old events but hide from pickers. */
+  archivedAt?: ISODateTimeString;
 }
 
 export interface EventTag {
@@ -75,6 +77,8 @@ export interface Person extends EntityMetadata {
   displayName: string;
   aliases: string[];
   notes?: string;
+  /** Nullable timestamp; archived people stay on old events but hide from pickers. */
+  archivedAt?: ISODateTimeString;
 }
 
 export interface EventParticipant {
@@ -84,6 +88,30 @@ export interface EventParticipant {
   role: string;
   medium: ParticipantMedium;
   initiatedBy: ParticipantInitiation;
+}
+
+export interface Template extends EntityMetadata {
+  name: string;
+  title: string;
+  /** Suggested duration in minutes; undefined means a point event. */
+  defaultDurationMinutes?: number;
+  /** Tag ids; one flagged primary. Empty for special templates. */
+  tagIds: UUID[];
+  /** special = 'wake' | 'sleep': creates a point event and sets Day time. */
+  special?: 'wake' | 'sleep';
+  isPinned: boolean;
+  sortOrder: number;
+}
+
+export interface TemplateTag {
+  templateId: UUID;
+  tagId: UUID;
+  isPrimary: boolean;
+}
+
+export interface PersonAlias extends EntityMetadata {
+  personId: UUID;
+  alias: string;
 }
 
 export interface JournalEntry extends EntityMetadata {

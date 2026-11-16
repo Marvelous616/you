@@ -9,3 +9,5 @@ export * from './quick-entry.js';
 export * from './suggestions.js';
 export * from './calendar.js';
 export * from './extensions.js';
+export * from './edits.js';
+export * from './templates.js';

@@ -212,4 +212,94 @@ export class SqlitePersonRepository implements IPersonRepository {
 
     return { records, nextCursor, hasMore };
   }
+
+  async patch(
+    id: UUID,
+    patch: { displayName?: string; notes?: string | null }
+  ): Promise<Person> {
+    const existing = await this.findById(id);
+    if (!existing) {
+      throw new Error(`Person ${id} not found`);
+    }
+
+    const updated: Person = {
+      ...existing,
+      ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
+      ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    await this.save(updated);
+    return updated;
+  }
+
+  async archive(id: UUID): Promise<void> {
+    const existing = await this.findById(id);
+    if (!existing) return;
+
+    this.db
+      .prepare(
+        'UPDATE people SET archived_at = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL'
+      )
+      .run(new Date().toISOString(), new Date().toISOString(), id);
+  }
+
+  async unarchive(id: UUID): Promise<void> {
+    this.db
+      .prepare(
+        'UPDATE people SET archived_at = NULL, updated_at = ? WHERE id = ?'
+      )
+      .run(new Date().toISOString(), id);
+  }
+
+  async delete(id: UUID): Promise<void> {
+    const usage = await this.countUsage(id);
+    if (usage > 0) {
+      throw new Error(`Person ${id} is used by ${usage} event(s); archive instead`);
+    }
+
+    this.db.prepare('DELETE FROM people WHERE id = ?').run(id);
+  }
+
+  async countUsage(id: UUID): Promise<number> {
+    const row = this.db
+      .prepare(
+        'SELECT COUNT(*) AS count FROM event_participants WHERE person_id = ?'
+      )
+      .get(id) as unknown as { count: number };
+    return row.count;
+  }
+
+  async addAlias(personId: UUID, alias: string): Promise<void> {
+    const existing = await this.db
+      .prepare(
+        'SELECT id FROM person_aliases WHERE person_id = ? AND alias = ? AND is_deleted = 0'
+      )
+      .get(personId, alias);
+    if (existing) return;
+
+    const id = `alias-${personId}-${alias.replace(/[^a-z0-9]+/g, '-')}`;
+    this.db
+      .prepare(`
+        INSERT INTO person_aliases (id, person_id, alias, created_at, updated_at, is_deleted)
+        VALUES (?, ?, ?, ?, ?, 0)
+      `)
+      .run(id, personId, alias, new Date().toISOString(), new Date().toISOString());
+  }
+
+  async removeAlias(personId: UUID, alias: string): Promise<void> {
+    this.db
+      .prepare(
+        'DELETE FROM person_aliases WHERE person_id = ? AND alias = ?'
+      )
+      .run(personId, alias);
+  }
+
+  async listAliases(personId: UUID): Promise<string[]> {
+    const rows = this.db
+      .prepare(
+        'SELECT alias FROM person_aliases WHERE person_id = ? AND is_deleted = 0 ORDER BY alias ASC'
+      )
+      .all(personId) as unknown as { alias: string }[];
+    return rows.map((row) => row.alias);
+  }
 }

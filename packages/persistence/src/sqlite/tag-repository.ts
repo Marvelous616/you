@@ -216,4 +216,64 @@ export class SqliteTagRepository implements ITagRepository {
 
     return { records, nextCursor, hasMore };
   }
+
+  async create(tag: Tag): Promise<Tag> {
+    await this.save(tag);
+    return tag;
+  }
+
+  async patch(
+    id: UUID,
+    patch: { name?: string; color?: string; parentId?: UUID | null }
+  ): Promise<Tag> {
+    const existing = await this.findById(id);
+    if (!existing) {
+      throw new Error(`Tag ${id} not found`);
+    }
+
+    const updated: Tag = {
+      ...existing,
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.color !== undefined ? { color: patch.color } : {}),
+      ...(patch.parentId !== undefined ? { parentId: patch.parentId } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    await this.save(updated);
+    return updated;
+  }
+
+  async archive(id: UUID): Promise<void> {
+    const existing = await this.findById(id);
+    if (!existing) return;
+
+    this.db
+      .prepare(
+        'UPDATE tags SET archived_at = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL'
+      )
+      .run(new Date().toISOString(), new Date().toISOString(), id);
+  }
+
+  async unarchive(id: UUID): Promise<void> {
+    this.db
+      .prepare(
+        'UPDATE tags SET archived_at = NULL, updated_at = ? WHERE id = ?'
+      )
+      .run(new Date().toISOString(), id);
+  }
+
+  async delete(id: UUID): Promise<void> {
+    const usage = await this.countUsage(id);
+    if (usage > 0) {
+      throw new Error(`Tag ${id} is used by ${usage} event(s); archive instead`);
+    }
+
+    this.db.prepare('DELETE FROM tags WHERE id = ?').run(id);
+  }
+
+  async countUsage(id: UUID): Promise<number> {
+    const row = this.db
+      .prepare('SELECT COUNT(*) AS count FROM event_tags WHERE tag_id = ?')
+      .get(id) as unknown as { count: number };
+    return row.count;
+  }
 }

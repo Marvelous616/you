@@ -171,6 +171,56 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 4,
+    description: 'Increment 4: templates, person aliases, tag/person archives, event soft delete',
+    up: (db: DatabaseSync) => {
+      db.exec(`
+        ALTER TABLE tags ADD COLUMN archived_at TEXT;
+
+        ALTER TABLE people ADD COLUMN archived_at TEXT;
+
+        CREATE TABLE IF NOT EXISTS templates (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          title TEXT NOT NULL,
+          default_duration_minutes INTEGER,
+          special TEXT,
+          is_pinned INTEGER NOT NULL DEFAULT 0,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS template_tags (
+          template_id TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+          tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+          is_primary INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (template_id, tag_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS person_aliases (
+          id TEXT PRIMARY KEY,
+          person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+          alias TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_person_aliases_live_alias
+          ON person_aliases(person_id, alias) WHERE is_deleted = 0;
+
+        CREATE INDEX IF NOT EXISTS idx_templates_updated_at ON templates(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_template_tags_template ON template_tags(template_id);
+        CREATE INDEX IF NOT EXISTS idx_person_aliases_person ON person_aliases(person_id);
+        CREATE INDEX IF NOT EXISTS idx_person_aliases_updated_at ON person_aliases(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_tags_archived_at ON tags(archived_at);
+        CREATE INDEX IF NOT EXISTS idx_people_archived_at ON people(archived_at);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

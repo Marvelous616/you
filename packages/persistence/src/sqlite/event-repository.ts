@@ -100,6 +100,47 @@ export class SqliteEventRepository implements IEventRepository {
     return row ? rowToEvent(row) : null;
   }
 
+  async get(id: UUID): Promise<Event | null> {
+    return this.findById(id);
+  }
+
+  async patch(id: UUID, patch: Partial<Event>): Promise<Event> {
+    const existing = await this.findById(id);
+    if (!existing) {
+      throw new Error(`Event ${id} not found`);
+    }
+
+    const updated: Event = {
+      ...existing,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.save(updated);
+    return updated;
+  }
+
+  async softDelete(id: UUID): Promise<void> {
+    const existing = await this.findById(id);
+    if (!existing || existing.isDeleted) return;
+
+    this.db
+      .prepare(
+        'UPDATE events SET is_deleted = 1, updated_at = ? WHERE id = ?'
+      )
+      .run(new Date().toISOString(), id);
+  }
+
+  async restore(id: UUID): Promise<void> {
+    const existing = await this.findById(id);
+    if (!existing || !existing.isDeleted) return;
+
+    this.db
+      .prepare(
+        'UPDATE events SET is_deleted = 0, updated_at = ? WHERE id = ?'
+      )
+      .run(new Date().toISOString(), id);
+  }
+
   async listByDay(dayId: UUID, includeDeleted = false): Promise<Event[]> {
     const query = includeDeleted
       ? 'SELECT * FROM events WHERE day_id = ? ORDER BY start_at ASC, id ASC'

@@ -12,18 +12,24 @@ import {
   SqliteEventRepository,
   SqliteJournalRepository,
   SqliteMarkerRepository,
+  SqlitePersonAliasRepository,
   SqlitePersonRepository,
   SqliteSuggestionRepository,
   SqliteTagRepository,
+  SqliteTemplateRepository,
+  SqliteTemplateTagRepository,
   ICalendarItemRepository,
   ICaptureRepository,
   IDayRepository,
   IEventRepository,
   IJournalRepository,
   IMarkerRepository,
+  IPersonAliasRepository,
   IPersonRepository,
   ISuggestionRepository,
   ITagRepository,
+  ITemplateRepository,
+  ITemplateTagRepository,
   runMigrations,
 } from '@life-logger/persistence';
 import {
@@ -44,24 +50,32 @@ import {
   JournalEntry,
   Marker,
   Person,
+  PersonAlias,
   Suggestion,
   SuggestionOverrides,
   SuggestionStatus,
   Tag,
+  Template,
+  TemplateTag,
   acceptSuggestion,
+  applyEventPatch,
   buildEventFromSuggestion,
   calculateDayCoverage,
   calculateDayFidelity,
   calendarEventsToSuggestions,
   createDefaultExtensionRegistry,
+  createParticipant,
+  buildTemplate,
   editSuggestion,
   findTimelineGaps,
   getLocalDateString,
   parseIcsCalendar,
   rejectSuggestion,
   resolveLogicalDay,
+  reassignDay,
   resolvePeopleForEvent,
   resolveTagsForEvent,
+  templateToEventDraft,
 } from '@life-logger/domain';
 
 export interface AppOptions {
@@ -127,6 +141,68 @@ interface CalendarImportBody {
   ics: string;
 }
 
+interface PatchEventInput {
+  title?: string;
+  startAt?: string;
+  endAt?: string | null;
+  startPrecision?: 'exact' | 'approx' | 'unknown';
+  endPrecision?: 'exact' | 'approx' | 'unknown' | null;
+  notes?: string | null;
+  tagPaths?: string[];
+  peopleNames?: string[];
+}
+
+interface CreateTagBody {
+  name: string;
+  color?: string;
+  parentId?: string;
+}
+
+interface PatchTagBody {
+  name?: string;
+  color?: string;
+  parentId?: string | null;
+}
+
+interface CreatePersonBody {
+  displayName: string;
+  aliases?: string[];
+  notes?: string;
+}
+
+interface PatchPersonBody {
+  displayName?: string;
+  notes?: string | null;
+}
+
+interface PutPersonAliasesBody {
+  aliases: string[];
+}
+
+interface CreateTemplateBody {
+  name: string;
+  title: string;
+  defaultDurationMinutes?: number;
+  tagIds?: string[];
+  special?: 'wake' | 'sleep';
+  isPinned?: boolean;
+  sortOrder?: number;
+}
+
+interface PatchTemplateBody {
+  name?: string;
+  title?: string;
+  defaultDurationMinutes?: number | null;
+  tagIds?: string[];
+  special?: 'wake' | 'sleep' | null;
+  isPinned?: boolean;
+  sortOrder?: number;
+}
+
+interface LogTemplateBody {
+  startAt?: string;
+}
+
 function normalizeRecord<T extends object>(record: SyncRecordPayload, forceId?: string): T {
   const data = record.data;
   if (!data || typeof data !== 'object') {
@@ -164,10 +240,13 @@ export function buildApp(options: AppOptions): FastifyInstance {
   const eventRepo: IEventRepository = new SqliteEventRepository(db);
   const tagRepo: ITagRepository = new SqliteTagRepository(db);
   const personRepo: IPersonRepository = new SqlitePersonRepository(db);
+  const personAliasRepo: IPersonAliasRepository = new SqlitePersonAliasRepository(db);
   const journalRepo: IJournalRepository = new SqliteJournalRepository(db);
   const captureRepo: ICaptureRepository = new SqliteCaptureRepository(db);
   const suggestionRepo: ISuggestionRepository = new SqliteSuggestionRepository(db);
   const calendarItemRepo: ICalendarItemRepository = new SqliteCalendarItemRepository(db);
+  const templateRepo: ITemplateRepository = new SqliteTemplateRepository(db);
+  const templateTagRepo: ITemplateTagRepository = new SqliteTemplateTagRepository(db);
   const extensionRegistry = createDefaultExtensionRegistry();
 
   const server = Fastify({ logger: options.logger ?? false });
@@ -783,6 +862,577 @@ export function buildApp(options: AppOptions): FastifyInstance {
       capture: body.capture ?? null,
     };
   });
+
+  // ---------------------------------------------------------------------------
+  // Event read, edit, delete, restore
+  // ---------------------------------------------------------------------------
+
+  server.patch<{ Params: { eventId: string }; Body: PatchEventInput }>(
+    '/api/v1/events/:eventId',
+    async (request, reply) => {
+      const event = await eventRepo.findById(request.params.eventId);
+      if (!event) {
+        reply.code(404).send({ error: 'Event not found' });
+        return;
+      }
+
+      const now = new Date();
+      const result = applyEventPatch(event, request.body ?? {}, now);
+      if (result.errors.length > 0) {
+        reply.code(400).send({ error: result.errors[0].message });
+        return;
+      }
+
+      // Resolve tags and people if provided
+      const existingTags = await tagRepo.listTree();
+      const existingPeople = await personRepo.listAll();
+
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const updated = await eventRepo.patch(request.params.eventId, result.event);
+
+        if (request.body?.tagPaths !== undefined) {
+          const resolvedTags = resolveTagsForEvent(
+            updated.id,
+            request.body.tagPaths,
+            existingTags,
+            { now }
+          );
+          for (const tag of resolvedTags.tags) {
+            await tagRepo.save(tag);
+          }
+          await tagRepo.assignTagsToEvent(updated.id, resolvedTags.eventTags);
+        }
+
+        if (request.body?.peopleNames !== undefined) {
+          const resolvedPeople = resolvePeopleForEvent(
+            updated.id,
+            request.body.peopleNames,
+            existingPeople,
+            { now }
+          );
+          for (const person of resolvedPeople.people) {
+            await personRepo.save(person);
+          }
+          // Remove existing participants and re-add
+          const existingParticipants = await personRepo.listParticipants(
+            updated.id
+          );
+          for (const p of existingParticipants) {
+            await personRepo.unlinkParticipant(updated.id, p.personId);
+          }
+          for (const participant of resolvedPeople.participants) {
+            await personRepo.linkParticipant(participant);
+          }
+        }
+
+        // Reassign day if startAt changed
+        if (request.body?.startAt !== undefined) {
+          const days = await dayRepo.listAll();
+          const { dayId } = reassignDay(updated, days, updated.timezone || 'UTC');
+          if (dayId !== updated.dayId) {
+            await eventRepo.patch(updated.id, { dayId });
+          }
+        }
+
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        reply.code(500).send({ error: `Failed to update event: ${String(err)}` });
+        return;
+      }
+
+      const [eventTags, participants] = await Promise.all([
+        tagRepo.listEventTags(updated.id),
+        personRepo.listParticipants(updated.id),
+      ]);
+
+      return {
+        event: updated,
+        eventTags,
+        participants,
+      };
+    }
+  );
+
+  server.delete<{ Params: { eventId: string } }>(
+    '/api/v1/events/:eventId',
+    async (request, reply) => {
+      const event = await eventRepo.findById(request.params.eventId);
+      if (!event) {
+        reply.code(404).send({ error: 'Event not found' });
+        return;
+      }
+
+      await eventRepo.softDelete(request.params.eventId);
+      return { id: request.params.eventId, isDeleted: true };
+    }
+  );
+
+  server.post<{ Params: { eventId: string } }>(
+    '/api/v1/events/:eventId/restore',
+    async (request, reply) => {
+      const event = await eventRepo.findById(request.params.eventId);
+      if (!event) {
+        reply.code(404).send({ error: 'Event not found' });
+        return;
+      }
+
+      await eventRepo.restore(request.params.eventId);
+      return { id: request.params.eventId, isDeleted: false };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // Tag management
+  // ---------------------------------------------------------------------------
+
+  server.post<{ Body: CreateTagBody }>('/api/v1/tags', async (request, reply) => {
+    const body = request.body;
+    if (!body?.name || typeof body.name !== 'string') {
+      reply.code(400).send({ error: 'tag name is required' });
+      return;
+    }
+
+    const normalizedName = body.name.trim();
+    if (!normalizedName) {
+      reply.code(400).send({ error: 'tag name cannot be empty' });
+      return;
+    }
+
+    const now = new Date();
+    const timestamp = now.toISOString();
+
+    const parentId = body.parentId ?? undefined;
+    const tag: Tag = {
+      id: `tag-${normalizedName
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9_-]/g, '')}`,
+      name: normalizedName,
+      path: normalizedName,
+      color: body.color ?? undefined,
+      parentId,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      isDeleted: false,
+    };
+
+    try {
+      await tagRepo.create(tag);
+    } catch (err) {
+      reply.code(409).send({ error: `Tag already exists: ${String(err)}` });
+      return;
+    }
+
+    return tag;
+  });
+
+  server.patch<{ Params: { tagId: string }; Body: PatchTagBody }>(
+    '/api/v1/tags/:tagId',
+    async (request, reply) => {
+      const tag = await tagRepo.findById(request.params.tagId);
+      if (!tag) {
+        reply.code(404).send({ error: 'Tag not found' });
+        return;
+      }
+
+      try {
+        const updated = await tagRepo.patch(request.params.tagId, request.body ?? {});
+        return updated;
+      } catch (err) {
+        reply.code(400).send({ error: String(err) });
+        return;
+      }
+    }
+  );
+
+  server.post<{ Params: { tagId: string } }>(
+    '/api/v1/tags/:tagId/archive',
+    async (request, reply) => {
+      const tag = await tagRepo.findById(request.params.tagId);
+      if (!tag) {
+        reply.code(404).send({ error: 'Tag not found' });
+        return;
+      }
+
+      await tagRepo.archive(request.params.tagId);
+      return { id: request.params.tagId, archived: true };
+    }
+  );
+
+  server.post<{ Params: { tagId: string } }>(
+    '/api/v1/tags/:tagId/unarchive',
+    async (request, reply) => {
+      const tag = await tagRepo.findById(request.params.tagId);
+      if (!tag) {
+        reply.code(404).send({ error: 'Tag not found' });
+        return;
+      }
+
+      await tagRepo.unarchive(request.params.tagId);
+      return { id: request.params.tagId, archived: false };
+    }
+  );
+
+  server.delete<{ Params: { tagId: string } }>(
+    '/api/v1/tags/:tagId',
+    async (request, reply) => {
+      const tag = await tagRepo.findById(request.params.tagId);
+      if (!tag) {
+        reply.code(404).send({ error: 'Tag not found' });
+        return;
+      }
+
+      try {
+        await tagRepo.delete(request.params.tagId);
+      } catch (err) {
+        reply.code(409).send({ error: String(err) });
+        return;
+      }
+
+      return { id: request.params.tagId, deleted: true };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // People management
+  // ---------------------------------------------------------------------------
+
+  server.post<{ Body: CreatePersonBody }>('/api/v1/people', async (request, reply) => {
+    const body = request.body;
+    if (!body?.displayName || typeof body.displayName !== 'string') {
+      reply.code(400).send({ error: 'displayName is required' });
+      return;
+    }
+
+    const now = new Date();
+    const timestamp = now.toISOString();
+
+    const person: Person = {
+      id: `person-${body.displayName
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9_-]/g, '')}`,
+      displayName: body.displayName.trim(),
+      aliases: body.aliases ?? [],
+      notes: body.notes ?? undefined,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      isDeleted: false,
+    };
+
+    try {
+      await personRepo.create(person);
+    } catch (err) {
+      reply.code(409).send({ error: `Person already exists: ${String(err)}` });
+      return;
+    }
+
+    if (body.aliases && body.aliases.length > 0) {
+      for (const alias of body.aliases) {
+        await personAliasRepo.save({
+          id: `alias-${person.id}-${alias.replace(/[^a-z0-9]+/g, '-')}`,
+          personId: person.id,
+          alias,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          isDeleted: false,
+        });
+      }
+    }
+
+    return person;
+  });
+
+  server.patch<{ Params: { personId: string }; Body: PatchPersonBody }>(
+    '/api/v1/people/:personId',
+    async (request, reply) => {
+      const person = await personRepo.findById(request.params.personId);
+      if (!person) {
+        reply.code(404).send({ error: 'Person not found' });
+        return;
+      }
+
+      try {
+        const updated = await personRepo.patch(request.params.personId, {
+          displayName: request.body?.displayName,
+          notes: request.body?.notes,
+        });
+        return updated;
+      } catch (err) {
+        reply.code(400).send({ error: String(err) });
+        return;
+      }
+    }
+  );
+
+  server.put<{ Params: { personId: string }; Body: PutPersonAliasesBody }>(
+    '/api/v1/people/:personId/aliases',
+    async (request, reply) => {
+      const person = await personRepo.findById(request.params.personId);
+      if (!person) {
+        reply.code(404).send({ error: 'Person not found' });
+        return;
+      }
+
+      const aliases = request.body?.aliases ?? [];
+      await personAliasRepo.deleteForPerson(request.params.personId);
+      for (const alias of aliases) {
+        await personAliasRepo.save({
+          id: `alias-${request.params.personId}-${alias.replace(/[^a-z0-9]+/g, '-')}`,
+          personId: request.params.personId,
+          alias,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          isDeleted: false,
+        });
+      }
+
+      return { aliases };
+    }
+  );
+
+  server.post<{ Params: { personId: string } }>(
+    '/api/v1/people/:personId/archive',
+    async (request, reply) => {
+      const person = await personRepo.findById(request.params.personId);
+      if (!person) {
+        reply.code(404).send({ error: 'Person not found' });
+        return;
+      }
+
+      await personRepo.archive(request.params.personId);
+      return { id: request.params.personId, archived: true };
+    }
+  );
+
+  server.post<{ Params: { personId: string } }>(
+    '/api/v1/people/:personId/unarchive',
+    async (request, reply) => {
+      const person = await personRepo.findById(request.params.personId);
+      if (!person) {
+        reply.code(404).send({ error: 'Person not found' });
+        return;
+      }
+
+      await personRepo.unarchive(request.params.personId);
+      return { id: request.params.personId, archived: false };
+    }
+  );
+
+  server.delete<{ Params: { personId: string } }>(
+    '/api/v1/people/:personId',
+    async (request, reply) => {
+      const person = await personRepo.findById(request.params.personId);
+      if (!person) {
+        reply.code(404).send({ error: 'Person not found' });
+        return;
+      }
+
+      try {
+        await personRepo.delete(request.params.personId);
+      } catch (err) {
+        reply.code(409).send({ error: String(err) });
+        return;
+      }
+
+      return { id: request.params.personId, deleted: true };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // Template management
+  // ---------------------------------------------------------------------------
+
+  server.get('/api/v1/templates', async () => {
+    return templateRepo.listAll();
+  });
+
+  server.post<{ Body: CreateTemplateBody }>('/api/v1/templates', async (request, reply) => {
+    const body = request.body;
+    if (!body?.name || !body?.title) {
+      reply.code(400).send({ error: 'name and title are required' });
+      return;
+    }
+
+    const now = new Date();
+    const timestamp = now.toISOString();
+
+    const template: Template = buildTemplate(
+      {
+        name: body.name,
+        title: body.title,
+        defaultDurationMinutes: body.defaultDurationMinutes,
+        tagIds: body.tagIds ?? [],
+        special: body.special,
+        isPinned: body.isPinned ?? false,
+        sortOrder: body.sortOrder ?? 0,
+      },
+      { now }
+    );
+
+    try {
+      await templateRepo.create(template);
+    } catch (err) {
+      reply.code(409).send({ error: `Template already exists: ${String(err)}` });
+      return;
+    }
+
+    if (body.tagIds && body.tagIds.length > 0) {
+      const primaryTagId = body.tagIds[0];
+      for (let i = 0; i < body.tagIds.length; i++) {
+        await templateTagRepo.save({
+          templateId: template.id,
+          tagId: body.tagIds[i],
+          isPrimary: i === 0 && primaryTagId === body.tagIds[i],
+        });
+      }
+    }
+
+    return template;
+  });
+
+  server.patch<{ Params: { templateId: string }; Body: PatchTemplateBody }>(
+    '/api/v1/templates/:templateId',
+    async (request, reply) => {
+      const template = await templateRepo.findById(request.params.templateId);
+      if (!template) {
+        reply.code(404).send({ error: 'Template not found' });
+        return;
+      }
+
+      try {
+        const updated = await templateRepo.patch(request.params.templateId, {
+          name: request.body?.name,
+          title: request.body?.title,
+          defaultDurationMinutes: request.body?.defaultDurationMinutes,
+          special: request.body?.special,
+          isPinned: request.body?.isPinned,
+          sortOrder: request.body?.sortOrder,
+        });
+
+        if (request.body?.tagIds !== undefined) {
+          await templateTagRepo.deleteForTemplate(request.params.templateId);
+          for (let i = 0; i < request.body.tagIds.length; i++) {
+            await templateTagRepo.save({
+              templateId: request.params.templateId,
+              tagId: request.body.tagIds[i],
+              isPrimary: i === 0,
+            });
+          }
+        }
+
+        return updated;
+      } catch (err) {
+        reply.code(400).send({ error: String(err) });
+        return;
+      }
+    }
+  );
+
+  server.delete<{ Params: { templateId: string } }>(
+    '/api/v1/templates/:templateId',
+    async (request, reply) => {
+      const template = await templateRepo.findById(request.params.templateId);
+      if (!template) {
+        reply.code(404).send({ error: 'Template not found' });
+        return;
+      }
+
+      await templateRepo.softDelete(request.params.templateId);
+      return { id: request.params.templateId, isDeleted: true };
+    }
+  );
+
+  server.post<{ Params: { templateId: string }; Body: LogTemplateBody }>(
+    '/api/v1/templates/:templateId/log',
+    async (request, reply) => {
+      const template = await templateRepo.findById(request.params.templateId);
+      if (!template) {
+        reply.code(404).send({ error: 'Template not found' });
+        return;
+      }
+
+      const now = new Date();
+      const startAt = request.body?.startAt ?? now.toISOString();
+
+      try {
+        const draft = templateToEventDraft(template, startAt);
+
+        const existingTags = await tagRepo.listTree();
+        const existingPeople = await personRepo.listAll();
+        const resolvedTags = resolveTagsForEvent(
+          `event-${Date.now()}`,
+          template.tagIds.map((t) => {
+            const tag = existingTags.find((tag) => tag.id === t);
+            return tag ? tag.path : '';
+          }).filter(Boolean),
+          existingTags,
+          { now }
+        );
+
+        const eventId = `event-${Date.now()}`;
+        const dayId = `day-${getLocalDateString(new Date(startAt), 'UTC')}`;
+
+        const event: Event = {
+          id: eventId,
+          dayId,
+          title: draft.event.title,
+          startAt: draft.event.startAt,
+          endAt: draft.event.endAt,
+          startPrecision: 'exact',
+          endPrecision: draft.event.endAt ? 'exact' : 'exact',
+          source: 'live',
+          notes: undefined,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+          isDeleted: false,
+        };
+
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          const resolvedDayId = await ensureDay(dayId, event.startAt);
+          event.dayId = resolvedDayId;
+          await eventRepo.save(event);
+
+          for (const tag of resolvedTags.tags) {
+            await tagRepo.save(tag);
+          }
+          await tagRepo.assignTagsToEvent(event.id, resolvedTags.eventTags);
+
+          // If special template, set day wake/sleep
+          if (draft.setWakeOrSleep === 'wake') {
+            const day = await dayRepo.findById(resolvedDayId);
+            if (day && !day.wakeAt) {
+              await dayRepo.save({ ...day, wakeAt: startAt, updatedAt: now.toISOString() });
+            }
+          } else if (draft.setWakeOrSleep === 'sleep') {
+            const day = await dayRepo.findById(resolvedDayId);
+            if (day && !day.sleepAt) {
+              await dayRepo.save({ ...day, sleepAt: startAt, updatedAt: now.toISOString() });
+            }
+          }
+
+          db.exec('COMMIT');
+        } catch (err) {
+          db.exec('ROLLBACK');
+          reply.code(500).send({ error: `Failed to log template: ${String(err)}` });
+          return;
+        }
+
+        return {
+          event,
+          tags: resolvedTags.tags,
+          eventTags: resolvedTags.eventTags,
+          dayId: resolvedDayId,
+        };
+      } catch (err) {
+        reply.code(400).send({ error: String(err) });
+        return;
+      }
+    }
+  );
 
   server.get('/api/v1/tags', async () => {
     return tagRepo.listTree();

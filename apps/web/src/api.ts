@@ -11,6 +11,7 @@ import {
   SuggestionOverrides,
   SuggestionStatus,
   Tag,
+  Template,
   TimelineGap,
 } from '@life-logger/domain';
 
@@ -219,6 +220,320 @@ export async function importCalendarIcs(ics: string): Promise<CalendarImportResu
   });
   return readJson<CalendarImportResult>(res, 'Failed to import calendar');
 }
+
+// ---------------------------------------------------------------------------
+// Event read, edit, delete, restore
+// ---------------------------------------------------------------------------
+
+export interface EventDetailResult {
+  event: Event;
+  eventTags: EventTag[];
+  participants: EventParticipant[];
+}
+
+export async function getEvent(eventId: string): Promise<EventDetailResult> {
+  const res = await fetch(`${API_BASE}/api/v1/events/${encodeURIComponent(eventId)}`);
+  return readJson<EventDetailResult>(res, 'Failed to fetch event');
+}
+
+export interface PatchEventInput {
+  title?: string;
+  startAt?: string;
+  endAt?: string | null;
+  startPrecision?: 'exact' | 'approx' | 'unknown';
+  endPrecision?: 'exact' | 'approx' | 'unknown' | null;
+  notes?: string | null;
+  tagPaths?: string[];
+  peopleNames?: string[];
+}
+
+export async function patchEvent(
+  eventId: string,
+  input: PatchEventInput
+): Promise<Event> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/events/${encodeURIComponent(eventId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }
+  );
+  return readJson<Event>(res, 'Failed to update event');
+}
+
+export async function deleteEvent(eventId: string): Promise<{ id: string; isDeleted: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/events/${encodeURIComponent(eventId)}`,
+    { method: 'DELETE' }
+  );
+  return readJson<{ id: string; isDeleted: boolean }>(res, 'Failed to delete event');
+}
+
+export async function restoreEvent(
+  eventId: string
+): Promise<{ id: string; isDeleted: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/events/${encodeURIComponent(eventId)}/restore`,
+    { method: 'POST' }
+  );
+  return readJson<{ id: string; isDeleted: boolean }>(res, 'Failed to restore event');
+}
+
+// ---------------------------------------------------------------------------
+// Tag management
+// ---------------------------------------------------------------------------
+
+export interface CreateTagInput {
+  name: string;
+  color?: string;
+  parentId?: string;
+}
+
+export async function fetchTags(): Promise<Tag[]> {
+  const res = await fetch(`${API_BASE}/api/v1/tags`);
+  return readJson<Tag[]>(res, 'Failed to fetch tags');
+}
+
+export async function createTag(input: CreateTagInput): Promise<Tag> {
+  const res = await fetch(`${API_BASE}/api/v1/tags`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readJson<Tag>(res, 'Failed to create tag');
+}
+
+export interface PatchTagInput {
+  name?: string;
+  color?: string;
+  parentId?: string | null;
+}
+
+export async function patchTag(tagId: string, input: PatchTagInput): Promise<Tag> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/tags/${encodeURIComponent(tagId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }
+  );
+  return readJson<Tag>(res, 'Failed to update tag');
+}
+
+export async function archiveTag(tagId: string): Promise<{ id: string; archived: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/tags/${encodeURIComponent(tagId)}/archive`,
+    { method: 'POST' }
+  );
+  return readJson<{ id: string; archived: boolean }>(res, 'Failed to archive tag');
+}
+
+export async function unarchiveTag(
+  tagId: string
+): Promise<{ id: string; archived: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/tags/${encodeURIComponent(tagId)}/unarchive`,
+    { method: 'POST' }
+  );
+  return readJson<{ id: string; archived: boolean }>(res, 'Failed to unarchive tag');
+}
+
+export async function deleteTag(tagId: string): Promise<{ id: string; deleted: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/tags/${encodeURIComponent(tagId)}`,
+    { method: 'DELETE' }
+  );
+  return readJson<{ id: string; deleted: boolean }>(res, 'Failed to delete tag');
+}
+
+// ---------------------------------------------------------------------------
+// People management
+// ---------------------------------------------------------------------------
+
+export interface CreatePersonInput {
+  displayName: string;
+  aliases?: string[];
+  notes?: string;
+}
+
+export interface PersonWithAliases extends Person {
+  aliasesList: string[];
+}
+
+export async function fetchPeople(q?: string): Promise<Person[]> {
+  const query = q ? `?q=${encodeURIComponent(q)}` : '';
+  const res = await fetch(`${API_BASE}/api/v1/people${query}`);
+  return readJson<Person[]>(res, 'Failed to fetch people');
+}
+
+export async function createPerson(input: CreatePersonInput): Promise<Person> {
+  const res = await fetch(`${API_BASE}/api/v1/people`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readJson<Person>(res, 'Failed to create person');
+}
+
+export interface PatchPersonInput {
+  displayName?: string;
+  notes?: string | null;
+}
+
+export async function patchPerson(
+  personId: string,
+  input: PatchPersonInput
+): Promise<Person> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/people/${encodeURIComponent(personId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }
+  );
+  return readJson<Person>(res, 'Failed to update person');
+}
+
+export async function putPersonAliases(
+  personId: string,
+  aliases: string[]
+): Promise<{ aliases: string[] }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/people/${encodeURIComponent(personId)}/aliases`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aliases }),
+    }
+  );
+  return readJson<{ aliases: string[] }>(res, 'Failed to update aliases');
+}
+
+export async function archivePerson(
+  personId: string
+): Promise<{ id: string; archived: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/people/${encodeURIComponent(personId)}/archive`,
+    { method: 'POST' }
+  );
+  return readJson<{ id: string; archived: boolean }>(res, 'Failed to archive person');
+}
+
+export async function unarchivePerson(
+  personId: string
+): Promise<{ id: string; archived: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/people/${encodeURIComponent(personId)}/unarchive`,
+    { method: 'POST' }
+  );
+  return readJson<{ id: string; archived: boolean }>(res, 'Failed to unarchive person');
+}
+
+export async function deletePerson(
+  personId: string
+): Promise<{ id: string; deleted: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/people/${encodeURIComponent(personId)}`,
+    { method: 'DELETE' }
+  );
+  return readJson<{ id: string; deleted: boolean }>(res, 'Failed to delete person');
+}
+
+// ---------------------------------------------------------------------------
+// Template management
+// ---------------------------------------------------------------------------
+
+export interface CreateTemplateInput {
+  name: string;
+  title: string;
+  defaultDurationMinutes?: number;
+  tagIds?: string[];
+  special?: 'wake' | 'sleep';
+  isPinned?: boolean;
+  sortOrder?: number;
+}
+
+export interface PatchTemplateInput {
+  name?: string;
+  title?: string;
+  defaultDurationMinutes?: number | null;
+  tagIds?: string[];
+  special?: 'wake' | 'sleep' | null;
+  isPinned?: boolean;
+  sortOrder?: number;
+}
+
+export interface LogTemplateInput {
+  startAt?: string;
+}
+
+export interface LogTemplateResult {
+  event: Event;
+  tags: Tag[];
+  eventTags: EventTag[];
+  dayId: string;
+}
+
+export async function fetchTemplates(): Promise<Template[]> {
+  const res = await fetch(`${API_BASE}/api/v1/templates`);
+  return readJson<Template[]>(res, 'Failed to fetch templates');
+}
+
+export async function createTemplate(input: CreateTemplateInput): Promise<Template> {
+  const res = await fetch(`${API_BASE}/api/v1/templates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readJson<Template>(res, 'Failed to create template');
+}
+
+export async function patchTemplate(
+  templateId: string,
+  input: PatchTemplateInput
+): Promise<Template> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/templates/${encodeURIComponent(templateId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }
+  );
+  return readJson<Template>(res, 'Failed to update template');
+}
+
+export async function deleteTemplate(
+  templateId: string
+): Promise<{ id: string; isDeleted: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/templates/${encodeURIComponent(templateId)}`,
+    { method: 'DELETE' }
+  );
+  return readJson<{ id: string; isDeleted: boolean }>(res, 'Failed to delete template');
+}
+
+export async function logTemplate(
+  templateId: string,
+  input: LogTemplateInput
+): Promise<LogTemplateResult> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/templates/${encodeURIComponent(templateId)}/log`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }
+  );
+  return readJson<LogTemplateResult>(res, 'Failed to log template');
+}
+
+// ---------------------------------------------------------------------------
+// Server health
+// ---------------------------------------------------------------------------
 
 export interface ServerHealth {
   status: string;

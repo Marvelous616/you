@@ -10,3 +10,6 @@ export * from './sqlite/journal-repository.js';
 export * from './sqlite/capture-repository.js';
 export * from './sqlite/suggestion-repository.js';
 export * from './sqlite/calendar-item-repository.js';
+export * from './sqlite/template-repository.js';
+export * from './sqlite/template-tag-repository.js';
+export * from './sqlite/person-alias-repository.js';
