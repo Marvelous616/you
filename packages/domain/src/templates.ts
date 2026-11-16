@@ -36,7 +36,7 @@ export interface TemplateEventDraft {
 }
 
 function defaultTemplateId(name: string): string {
-  return `template-${name.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+  return `template-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
 }
 
 export function buildTemplate(
@@ -70,13 +70,11 @@ export function patchTemplate(
     ...template,
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.title !== undefined ? { title: patch.title } : {}),
-    ...(patch.defaultDurationMinutes != null
-      ? { defaultDurationMinutes: patch.defaultDurationMinutes }
+    ...(patch.defaultDurationMinutes !== undefined
+      ? { defaultDurationMinutes: patch.defaultDurationMinutes ?? undefined }
       : {}),
     ...(patch.tagIds !== undefined ? { tagIds: patch.tagIds } : {}),
-    ...(patch.special != null
-      ? { special: patch.special }
-      : {}),
+    ...(patch.special !== undefined ? { special: patch.special ?? undefined } : {}),
     ...(patch.isPinned !== undefined ? { isPinned: patch.isPinned } : {}),
     ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
     updatedAt: now.toISOString(),

@@ -71,6 +71,8 @@ export function applyEventPatch(
         next.startPrecision = patch.startPrecision;
       }
     }
+  } else {
+    startMs = new Date(event.startAt).getTime();
   }
 
   let endMs: number | undefined;
@@ -90,6 +92,8 @@ export function applyEventPatch(
   } else if (patch.endAt === null) {
     next.endAt = undefined;
     next.endPrecision = 'exact';
+  } else {
+    endMs = new Date(event.endAt || event.startAt).getTime();
   }
 
   if (startMs !== undefined && endMs !== undefined && endMs <= startMs) {
