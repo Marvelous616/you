@@ -179,6 +179,303 @@ describe('server operations endpoints', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Increment 4.1 T3: Behaviors the report does not confirm
+// ---------------------------------------------------------------------------
+
+describe('Template log and suggestion behavior', () => {
+  let db: DatabaseSync;
+  let app: FastifyInstance;
+  let webDir: string;
+
+  beforeEach(async () => {
+    webDir = fs.mkdtempSync(path.join(os.tmpdir(), 'life-logger-web-'));
+    fs.mkdirSync(path.join(webDir, 'assets'));
+    fs.writeFileSync(path.join(webDir, 'index.html'), '<html>Life Logger</html>', 'utf8');
+    fs.writeFileSync(path.join(webDir, 'assets', 'index-abc123.js'), 'console.log(1);', 'utf8');
+
+    db = new DatabaseSync(':memory:');
+    app = buildApp({ db, version: 'test', webDir });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    fs.rmSync(webDir, { recursive: true, force: true });
+    db.close();
+  });
+
+  it('deleting an event from an accepted suggestion keeps external_id; re-import does not re-propose', async () => {
+    // Import an .ics calendar
+    const ics = `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:uid-test-1
+SUMMARY:Team meeting
+DTSTART:20260115T100000Z
+DTEND:20260115T110000Z
+END:VEVENT
+END:VCALENDAR`;
+
+    const importRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/extensions/calendar/import',
+      body: { ics },
+    });
+    expect(importRes.statusCode).toBe(200);
+    const importBody = JSON.parse(importRes.body);
+    expect(importBody.importedCount).toBe(1);
+
+    // Get the suggestion
+    const suggestionsRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/suggestions?status=pending',
+    });
+    const suggestions = JSON.parse(suggestionsRes.body);
+    expect(suggestions.length).toBe(1);
+    const suggestionId = suggestions[0].id;
+    expect(suggestions[0].externalId).toBe('uid-test-1');
+
+    // Accept the suggestion
+    const acceptRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/suggestions/${suggestionId}/accept`,
+    });
+    expect(acceptRes.statusCode).toBe(200);
+    const acceptBody = JSON.parse(acceptRes.body);
+    expect(acceptBody.event.id).toBeDefined();
+
+    // Delete the event
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/events/${acceptBody.event.id}`,
+    });
+    expect(delRes.statusCode).toBe(200);
+
+    // The suggestion should still have external_id
+    const suggestionRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/suggestions/${suggestionId}`,
+    });
+    const suggestionBody = JSON.parse(suggestionRes.body);
+    expect(suggestionBody.externalId).toBe('uid-test-1');
+
+    // Re-importing the same .ics should not propose again
+    const reimportRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/extensions/calendar/import',
+      body: { ics },
+    });
+    expect(reimportRes.statusCode).toBe(200);
+    const reimportBody = JSON.parse(reimportRes.body);
+    expect(reimportBody.importedCount).toBe(0);
+    expect(reimportBody.duplicateCount).toBe(1);
+
+    // Restore the event
+    const restoreRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/events/${acceptBody.event.id}/restore`,
+    });
+    expect(restoreRes.statusCode).toBe(200);
+
+    // The restored event should still not be re-proposed (suggestion still has external_id)
+    const suggestionAfterRestore = await app.inject({
+      method: 'GET',
+      url: `/api/v1/suggestions/${suggestionId}`,
+    });
+    const suggestionAfterRestoreBody = JSON.parse(suggestionAfterRestore.body);
+    expect(suggestionAfterRestoreBody.externalId).toBe('uid-test-1');
+  });
+
+  it('wake template creates point event and sets day wakeAt', async () => {
+    // Create a wake template
+    const createTemplateRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/templates',
+      body: {
+        name: 'Wake up',
+        title: 'Wake up',
+        special: 'wake',
+        isPinned: true,
+        sortOrder: 0,
+      },
+    });
+    expect(createTemplateRes.statusCode).toBe(200);
+    const templateBody = JSON.parse(createTemplateRes.body);
+    const templateId = templateBody.id;
+
+    // Log the template
+    const logRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/templates/${templateId}/log`,
+      body: { startAt: '2026-01-15T07:00:00.000Z' },
+    });
+    expect(logRes.statusCode).toBe(200);
+    const logBody = JSON.parse(logRes.body);
+    expect(logBody.event.title).toBe('Wake up');
+    expect(logBody.event.endAt).toBeUndefined();
+    expect(logBody.dayId).toBeDefined();
+
+    // Check the day has wakeAt set
+    const dayRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/days/${logBody.dayId}`,
+    });
+    const dayBody = JSON.parse(dayRes.body);
+    expect(dayBody.wakeAt).toBe('2026-01-15T07:00:00.000Z');
+  });
+
+  it('sleep template sets day sleepAt', async () => {
+    // Create a sleep template
+    const createTemplateRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/templates',
+      body: {
+        name: 'Sleep',
+        title: 'Sleep',
+        special: 'sleep',
+        isPinned: true,
+        sortOrder: 1,
+      },
+    });
+    expect(createTemplateRes.statusCode).toBe(200);
+    const templateBody = JSON.parse(createTemplateRes.body);
+    const templateId = templateBody.id;
+
+    // Log the wake template first so the day exists
+    const wakeLogRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/templates/${templateId}/log`,
+      body: { startAt: '2026-01-15T07:00:00.000Z' },
+    });
+    expect(wakeLogRes.statusCode).toBe(200);
+
+    // Log the sleep template
+    const logRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/templates/${templateId}/log`,
+      body: { startAt: '2026-01-15T23:00:00.000Z' },
+    });
+    expect(logRes.statusCode).toBe(200);
+    const logBody = JSON.parse(logRes.body);
+    expect(logBody.event.title).toBe('Sleep');
+    expect(logBody.event.endAt).toBeUndefined();
+
+    // Check the day has sleepAt set
+    const dayRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/days/day-2026-01-15',
+    });
+    const dayBody = JSON.parse(dayRes.body);
+    expect(dayBody.sleepAt).toBe('2026-01-15T23:00:00.000Z');
+  });
+
+  it('second wake log replaces wakeAt (D6)', async () => {
+    // Create a wake template
+    const createTemplateRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/templates',
+      body: {
+        name: 'Wake up',
+        title: 'Wake up',
+        special: 'wake',
+        isPinned: true,
+        sortOrder: 0,
+      },
+    });
+    expect(createTemplateRes.statusCode).toBe(200);
+    const templateBody = JSON.parse(createTemplateRes.body);
+    const templateId = templateBody.id;
+
+    // Log wake at 07:00
+    const logRes1 = await app.inject({
+      method: 'POST',
+      url: `/api/v1/templates/${templateId}/log`,
+      body: { startAt: '2026-01-15T07:00:00.000Z' },
+    });
+    expect(logRes1.statusCode).toBe(200);
+    const logBody1 = JSON.parse(logRes1.body);
+    expect(logBody1.previousWakeAt).toBeUndefined();
+
+    // Log wake again at 08:00 - should replace
+    const logRes2 = await app.inject({
+      method: 'POST',
+      url: `/api/v1/templates/${templateId}/log`,
+      body: { startAt: '2026-01-15T08:00:00.000Z' },
+    });
+    expect(logRes2.statusCode).toBe(200);
+    const logBody2 = JSON.parse(logRes2.body);
+    expect(logBody2.previousWakeAt).toBe('2026-01-15T07:00:00.000Z');
+
+    // Check the day has the new wakeAt
+    const dayRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/days/day-2026-01-15',
+    });
+    const dayBody = JSON.parse(dayRes.body);
+    expect(dayBody.wakeAt).toBe('2026-01-15T08:00:00.000Z');
+  });
+
+  it('undo after one-tap template deletes event and restores day wakeAt', async () => {
+    // Create a wake template
+    const createTemplateRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/templates',
+      body: {
+        name: 'Wake up',
+        title: 'Wake up',
+        special: 'wake',
+        isPinned: true,
+        sortOrder: 0,
+      },
+    });
+    expect(createTemplateRes.statusCode).toBe(200);
+    const templateBody = JSON.parse(createTemplateRes.body);
+    const templateId = templateBody.id;
+
+    // Log wake at 07:00
+    const logRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/templates/${templateId}/log`,
+      body: { startAt: '2026-01-15T07:00:00.000Z' },
+    });
+    expect(logRes.statusCode).toBe(200);
+    const logBody = JSON.parse(logRes.body);
+    expect(logBody.event.id).toBeDefined();
+    expect(logBody.previousWakeAt).toBeUndefined();
+
+    // Delete (undo) the event
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/events/${logBody.event.id}`,
+    });
+    expect(delRes.statusCode).toBe(200);
+
+    // Check the day's wakeAt is restored to previous (undefined)
+    const dayRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/days/day-2026-01-15',
+    });
+    const dayBody = JSON.parse(dayRes.body);
+    expect(dayBody.wakeAt).toBeUndefined();
+
+    // Restore the event
+    const restoreRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/events/${logBody.event.id}/restore`,
+    });
+    expect(restoreRes.statusCode).toBe(200);
+
+    // Check the day has wakeAt again
+    const dayRes2 = await app.inject({
+      method: 'GET',
+      url: '/api/v1/days/day-2026-01-15',
+    });
+    const dayBody2 = JSON.parse(dayRes2.body);
+    expect(dayBody2.wakeAt).toBe('2026-01-15T07:00:00.000Z');
+  });
+});
+
 describe('graceful shutdown', () => {
   it('closes HTTP, checkpoints the WAL, closes SQLite and exits zero', async () => {
     const calls: string[] = [];

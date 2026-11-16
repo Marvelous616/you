@@ -87,7 +87,17 @@ export class SqliteTemplateRepository implements ITemplateRepository {
     const row = this.db
       .prepare('SELECT * FROM templates WHERE id = ?')
       .get(id) as unknown as TemplateRow | undefined;
-    return row ? rowToTemplate(row) : null;
+    if (!row) return null;
+
+    const template = rowToTemplate(row);
+
+    // Load associated tag links
+    const tagLinks = this.db
+      .prepare('SELECT tag_id FROM template_tags WHERE template_id = ?')
+      .all(id) as unknown as { tag_id: string }[];
+    template.tagIds = tagLinks.map((link) => link.tag_id);
+
+    return template;
   }
 
   async findByName(name: string): Promise<Template | null> {

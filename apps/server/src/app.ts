@@ -965,6 +965,26 @@ export function buildApp(options: AppOptions): FastifyInstance {
       }
 
       await eventRepo.softDelete(request.params.eventId);
+
+      // Undo semantics for one-tap templates: a point event (no endAt) owns a
+      // Day time that the log set from the event's startAt. Soft deleting such
+      // an event undoes that and restores the Day time to its previous value.
+      if (!event.endAt) {
+        const day = await dayRepo.findById(event.dayId);
+        if (day) {
+          const updates: { wakeAt?: string; sleepAt?: string } = {};
+          if (day.wakeAt === event.startAt) updates.wakeAt = undefined;
+          if (day.sleepAt === event.startAt) updates.sleepAt = undefined;
+          if (Object.keys(updates).length > 0) {
+            await dayRepo.save({
+              ...day,
+              ...updates,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+
       return { id: request.params.eventId, isDeleted: true };
     }
   );
@@ -979,6 +999,24 @@ export function buildApp(options: AppOptions): FastifyInstance {
       }
 
       await eventRepo.restore(request.params.eventId);
+
+      // Restoring a point event (no endAt) brings the Day time it owned back.
+      if (!event.endAt) {
+        const day = await dayRepo.findById(event.dayId);
+        if (day) {
+          const updates: { wakeAt?: string; sleepAt?: string } = {};
+          if (day.wakeAt === undefined) updates.wakeAt = event.startAt;
+          if (day.sleepAt === undefined) updates.sleepAt = event.startAt;
+          if (Object.keys(updates).length > 0) {
+            await dayRepo.save({
+              ...day,
+              ...updates,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+
       return { id: request.params.eventId, isDeleted: false };
     }
   );
@@ -1369,7 +1407,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
         const existingPeople = await personRepo.listAll();
         const resolvedTags = resolveTagsForEvent(
           `event-${Date.now()}`,
-          template.tagIds.map((t) => {
+          (template.tagIds ?? []).map((t) => {
             const tag = existingTags.find((tag) => tag.id === t);
             return tag ? tag.path : '';
           }).filter(Boolean),
@@ -1387,7 +1425,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
           startAt: draft.event.startAt,
           endAt: draft.event.endAt,
           startPrecision: 'exact',
-          endPrecision: draft.event.endAt ? 'exact' : 'exact',
+          endPrecision: draft.event.endAt ? 'exact' : 'unknown',
           source: 'live',
           notes: undefined,
           createdAt: now.toISOString(),
@@ -1406,32 +1444,39 @@ export function buildApp(options: AppOptions): FastifyInstance {
           }
           await tagRepo.assignTagsToEvent(event.id, resolvedTags.eventTags);
 
-          // If special template, set day wake/sleep
-          if (draft.setWakeOrSleep === 'wake') {
-            const day = await dayRepo.findById(resolvedDayId);
-            if (day && !day.wakeAt) {
-              await dayRepo.save({ ...day, wakeAt: startAt, updatedAt: now.toISOString() });
-            }
-          } else if (draft.setWakeOrSleep === 'sleep') {
-            const day = await dayRepo.findById(resolvedDayId);
-            if (day && !day.sleepAt) {
-              await dayRepo.save({ ...day, sleepAt: startAt, updatedAt: now.toISOString() });
+          const dayRecord = await dayRepo.findById(resolvedDayId);
+
+          // If special template, set day wake/sleep (replaces existing)
+          let previousWakeAt: string | undefined;
+          let previousSleepAt: string | undefined;
+          if (draft.setWakeOrSleep === 'wake' || draft.setWakeOrSleep === 'sleep') {
+            if (dayRecord) {
+              previousWakeAt = dayRecord.wakeAt;
+              previousSleepAt = dayRecord.sleepAt;
+              await dayRepo.save({
+                ...dayRecord,
+                ...(draft.setWakeOrSleep === 'wake' ? { wakeAt: startAt } : {}),
+                ...(draft.setWakeOrSleep === 'sleep' ? { sleepAt: startAt } : {}),
+                updatedAt: new Date().toISOString(),
+              });
             }
           }
 
           db.exec('COMMIT');
+          return {
+            event,
+            day: dayRecord ?? null,
+            tags: resolvedTags.tags,
+            eventTags: resolvedTags.eventTags,
+            dayId: resolvedDayId,
+            previousWakeAt,
+            previousSleepAt,
+          };
         } catch (err) {
           db.exec('ROLLBACK');
           reply.code(500).send({ error: `Failed to log template: ${String(err)}` });
           return;
         }
-
-        return {
-          event,
-          tags: resolvedTags.tags,
-          eventTags: resolvedTags.eventTags,
-          dayId: resolvedDayId,
-        };
       } catch (err) {
         reply.code(400).send({ error: String(err) });
         return;
@@ -1494,6 +1539,18 @@ export function buildApp(options: AppOptions): FastifyInstance {
       }
 
       return suggestionRepo.listAll(includeDeleted);
+    }
+  );
+
+  server.get<{ Params: { suggestionId: string } }>(
+    '/api/v1/suggestions/:suggestionId',
+    async (request, reply) => {
+      const suggestion = await suggestionRepo.findById(request.params.suggestionId);
+      if (!suggestion || suggestion.isDeleted) {
+        reply.code(404).send({ error: 'Suggestion not found' });
+        return;
+      }
+      return suggestion;
     }
   );
 
