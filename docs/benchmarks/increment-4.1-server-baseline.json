@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-11-16T19:25:34.552Z",
+  "environment": {
+    "hostLabel": "Dainsleif",
+    "nodeVersion": "v24.22.2",
+    "platform": "linux",
+    "arch": "x64",
+    "cpuModel": "13th Gen Intel(R) Core(TM) i7-13700HX",
+    "cpuCount": 24,
+    "totalMemoryMb": 15699,
+    "appVersion": "0.3.6"
+  },
+  "metrics": {
+    "singleMarkerSaveAvgMs": 0.019089900000000312,
+    "singleMarkerSaveP95Ms": 0.025778999999999996,
+    "batchIngest5000RecordsMs": 93.77946699999998,
+    "dayTimelineQueryAvgMs": 0.05440418000000306,
+    "quickEntryParseAvgMs": 0.007592190500000101,
+    "quickEntryParseP95Ms": 0.009774999999990541,
+    "singleEventSaveAvgMs": 0.02611161999999922,
+    "timelineLanes50EventsAvgMs": 0.050473630000000894,
+    "timelineLanes50EventsP95Ms": 0.06511599999998907,
+    "icsParse200EventsAvgMs": 0.8322580799999997,
+    "calendarSuggestionBuild200EventsAvgMs": 0.35667387999999844,
+    "singleSuggestionSaveAvgMs": 0.02500155499999991,
+    "pendingSuggestionQueryAvgMs": 0.5463372199999986,
+    "suggestionAcceptFlowAvgMs": 0.06042709999999261,
+    "singleEventPatchAvgMs": 0.05047134999999514,
+    "timelineLoad1000EventsAvgMs": 2.6320835500000017,
+    "tagRename500DescendantsAvgMs": 5.470499000000018,
+    "templateLogFlowAvgMs": 0.03818979999999783
+  },
+  "passedTargets": {
+    "singleMarkerSave": true,
+    "batchIngest": true,
+    "dayTimelineQuery": true,
+    "quickEntryParse": true,
+    "singleEventSave": true,
+    "timelineLanes50Events": true,
+    "icsParse200Events": true,
+    "calendarSuggestionBuild200Events": true,
+    "singleSuggestionSave": true,
+    "pendingSuggestionQuery": true,
+    "suggestionAcceptFlow": true,
+    "singleEventPatch": true,
+    "timelineLoad1000Events": true,
+    "tagRename500Descendants": true,
+    "templateLogFlow": true
+  }
+}

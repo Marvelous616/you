@@ -5,14 +5,19 @@ import {
   SqliteDayRepository,
   SqliteEventRepository,
   SqliteSuggestionRepository,
+  SqliteTemplateRepository,
+  SqliteTagRepository,
 } from '@life-logger/persistence';
 import {
   acceptSuggestion,
   buildEventFromSuggestion,
+  buildTemplate,
   calendarEventsToSuggestions,
   computeTimelineLanes,
   parseIcsCalendar,
   parseQuickEntry,
+  recomputeTagPaths,
+  templateToEventDraft,
 } from '@life-logger/domain';
 import { generateEventDataset, generateSyntheticDataset } from './generator.js';
 import { BenchmarkDocument, compareBenchmarks, formatRegression, MAX_REGRESSION_FACTOR } from './compare.js';
@@ -72,7 +77,7 @@ function generateIcsCalendar(count: number): string {
 
 async function runBenchmark(hostLabel: string): Promise<BenchmarkDocument> {
   console.log('====================================================');
-  console.log('Running Life Logger Increment 3 Benchmark Suite');
+  console.log('Running Life Logger Increment 4.1 Benchmark Suite');
   console.log(`Host label: ${hostLabel}`);
   console.log('====================================================');
 
@@ -272,6 +277,118 @@ async function runBenchmark(hostLabel: string): Promise<BenchmarkDocument> {
     )} ms (Target: < 25 ms)`
   );
 
+  // 12. Single event patch latency (Target: < 15ms)
+  const patchableEvents = generateEventDataset(targetDayId, 20);
+  const eventPatchSamples: number[] = [];
+  for (const patchEvent of patchableEvents) {
+    const patchStart = performance.now();
+    await eventRepo.patch(patchEvent.id, { title: 'Patched synthetic activity' });
+    eventPatchSamples.push(performance.now() - patchStart);
+  }
+  const avgEventPatchMs = eventPatchSamples.reduce((a, b) => a + b, 0) / eventPatchSamples.length;
+  console.log(
+    `[Metric 12] Single Event Patch (Avg): ${avgEventPatchMs.toFixed(
+      3
+    )} ms (Target: < 15 ms)`
+  );
+
+  // 13. Timeline load with 1,000 events (Target: < 100ms)
+  const largeEventDataset = generateEventDataset(targetDayId, 1000);
+  for (const largeEvent of largeEventDataset) {
+    await eventRepo.save(largeEvent);
+  }
+  const timelineLoadSamples: number[] = [];
+  let loadedCount = 0;
+  for (let i = 0; i < 20; i++) {
+    const loadStart = performance.now();
+    const loaded = await eventRepo.listByDay(targetDayId);
+    timelineLoadSamples.push(performance.now() - loadStart);
+    loadedCount = loaded.length;
+  }
+  const avgTimelineLoadMs = timelineLoadSamples.reduce((a, b) => a + b, 0) / timelineLoadSamples.length;
+  console.log(
+    `[Metric 13] Timeline Load 1000 Events (Avg): ${avgTimelineLoadMs.toFixed(
+      3
+    )} ms (Target: < 100 ms)`
+  );
+  console.log(`Loaded ${loadedCount} events for timeline`);
+
+  // 14. Tag rename with 500 descendants (Target: < 100ms)
+  const rootTag = {
+    id: 'tag-bench-root',
+    name: 'Bench Root',
+    path: 'Bench Root',
+    color: undefined,
+    parentId: undefined,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    isDeleted: false,
+  };
+  const descendantTags = Array.from({ length: 500 }, (_, i) => ({
+    id: `tag-bench-child-${i}`,
+    name: `Bench Child ${i}`,
+    path: `Bench Root/Bench Child ${i}`,
+    color: undefined,
+    parentId: 'tag-bench-root',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    isDeleted: false,
+  }));
+  const tagSample = [rootTag, ...descendantTags];
+  const tagRepo = new SqliteTagRepository(db);
+  await tagRepo.save(rootTag);
+  for (const tag of descendantTags) {
+    await tagRepo.save(tag);
+  }
+  const renameStart = performance.now();
+  await tagRepo.patch('tag-bench-root', { name: 'Bench Root Renamed' });
+  const renameChanges = recomputeTagPaths(tagSample, 'tag-bench-root');
+  const renameMs = performance.now() - renameStart;
+  const renameSampleCount = Math.max(renameChanges.length, 1);
+  console.log(
+    `[Metric 14] Tag Rename 500 Descendants (Avg): ${(renameMs / renameSampleCount).toFixed(
+      3
+    )} ms (Target: < 100 ms)`
+  );
+
+  // 15. Template log flow (Target: < 25ms)
+  const templateRepo = new SqliteTemplateRepository(db);
+  const wakeTemplate = buildTemplate({
+    name: 'Bench Wake',
+    title: 'Bench Wake',
+    tagIds: [],
+    special: 'wake',
+    isPinned: true,
+    sortOrder: 0,
+  });
+  await templateRepo.save(wakeTemplate);
+  const templateLogSamples: number[] = [];
+  for (let i = 0; i < 20; i++) {
+    const logStart = performance.now();
+    const draft = templateToEventDraft(wakeTemplate, new Date(Date.now() + i * 60000).toISOString());
+    const event = {
+      id: `bench-template-event-${i}`,
+      dayId: targetDayId,
+      title: draft.event.title,
+      startAt: draft.event.startAt,
+      endAt: draft.event.endAt,
+      startPrecision: 'exact' as const,
+      endPrecision: draft.event.endAt ? ('exact' as const) : ('unknown' as const),
+      source: 'live' as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isDeleted: false,
+    };
+    await eventRepo.save(event);
+    templateLogSamples.push(performance.now() - logStart);
+  }
+  const avgTemplateLogMs = templateLogSamples.reduce((a, b) => a + b, 0) / templateLogSamples.length;
+  console.log(
+    `[Metric 15] Template Log Flow (Avg): ${avgTemplateLogMs.toFixed(
+      3
+    )} ms (Target: < 25 ms)`
+  );
+
   const results: BenchmarkDocument = {
     timestamp: new Date().toISOString(),
     environment: {
@@ -299,6 +416,10 @@ async function runBenchmark(hostLabel: string): Promise<BenchmarkDocument> {
       singleSuggestionSaveAvgMs: avgSuggestionSaveMs,
       pendingSuggestionQueryAvgMs: avgSuggestionListMs,
       suggestionAcceptFlowAvgMs: avgAcceptFlowMs,
+      singleEventPatchAvgMs: avgEventPatchMs,
+      timelineLoad1000EventsAvgMs: avgTimelineLoadMs,
+      tagRename500DescendantsAvgMs: renameMs / renameSampleCount,
+      templateLogFlowAvgMs: avgTemplateLogMs,
     },
     passedTargets: {
       singleMarkerSave: avgSingleSaveMs < 50,
@@ -312,6 +433,10 @@ async function runBenchmark(hostLabel: string): Promise<BenchmarkDocument> {
       singleSuggestionSave: avgSuggestionSaveMs < 15,
       pendingSuggestionQuery: avgSuggestionListMs < 15,
       suggestionAcceptFlow: avgAcceptFlowMs < 25,
+      singleEventPatch: avgEventPatchMs < 15,
+      timelineLoad1000Events: avgTimelineLoadMs < 100,
+      tagRename500Descendants: renameMs / renameSampleCount < 100,
+      templateLogFlow: avgTemplateLogMs < 25,
     },
   };
 
