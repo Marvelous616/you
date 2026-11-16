@@ -25,7 +25,7 @@ Increment 5 adds Things, full-text search, and Diagnostics.
 | A3 | Settings screen, tag management, people management, aliases | Done |
 | A4 | Suggestion edit dialog | Done |
 | A5 | Templates: entity, migration, API, pinned row, starter set | Done |
-| A6 | Housekeeping: tests, typecheck, build, benchmarks | Done |
+| A6 | Housekeeping: tests, typecheck, build, benchmarks | Partly done — tests, typecheck and build were green after Increment 4; the benchmark run and new baseline were completed in Increment 4.1 T4; the server upgrade/rollback drill was completed in Increment 3.9 and the remaining 4.1 deploy drill (schema 5) is pending |
 
 Total: ~9 focused days.
 
@@ -75,6 +75,12 @@ No change to the `Event` table schema. Editing changes existing columns only.
 | `tag.archived_at` | Nullable timestamp |
 | `person.archived_at` | Nullable timestamp |
 
+### Migration 5 (schema 4 → 5, added in Increment 4.1 T1)
+
+| Change | Detail |
+|--------|--------|
+| `person_aliases` live alias uniqueness | Unique index on lowercase alias across **all** live people (case-insensitive); migration pre-checks for duplicates across people and aborts before applying if any are found |
+
 ### Repository interfaces
 
 - `IEventRepository`: gains `get`, `patch`, `softDelete`, `restore`
@@ -122,6 +128,8 @@ No change to the `Event` table schema. Editing changes existing columns only.
 
 `PATCH /suggestions/:id` already existed; the web app now uses it. `accept` creates the event from edited values.
 
+`GET /api/v1/suggestions/:id` was added in Increment 4.1 (T3) so clients can fetch a single suggestion, including its `externalId`.
+
 ---
 
 ## 6. Sync (`packages/sync`)
@@ -164,13 +172,13 @@ Behavior:
 |------|------|--------|
 | CI | Type-check, lint, unit + contract tests green on every push | Pass |
 | Contract suite | Includes cases in persistence section 6.3 | Pass |
-| Migration | Tested from empty DB and copy of 3.9 production DB | Pass |
-| Benchmark | Run at end; added to docs/benchmarks/ | Pending (run manually) |
-| Upgrade + rollback | Deployed as new release, rolled back, redeployed | Pending (server drill) |
+| Migration | Tested from empty DB and copy of the 3.9 production DB | Pass (migration 4; migration 5 added in 4.1) |
+| Benchmark | Run at end; added to docs/benchmarks/ | Pass — new `increment-4.1-server-baseline.json` recorded in T4; no regression vs 3.9 baseline |
+| Upgrade + rollback | Deployed as new release, rolled back, redeployed | Pass (3.9 drill); schema 5 upgrade drill pending in 4.1 T5 |
 | Restore drill | Not required (schema change is small) | N/A |
-| Daily use | Deferred until features proven | Pending |
+| Daily use | Deferred until features proven | Pending — deferred per Increment 4.1 decision |
 
-All 144 existing tests pass. Web build succeeds (~191 KB JS gzipped).
+After Increment 4.1 hardening the full suite is green: 195 tests across 24 files (including the new alias, domain, and server behavior coverage), type-check clean, lint clean, web build succeeds (~191 KB JS gzipped, ~14.41 kB CSS).
 
 ---
 
@@ -214,4 +222,6 @@ All 144 existing tests pass. Web build succeeds (~191 KB JS gzipped).
 
 ## 11. Next Steps
 
-Increment 4 is complete. The daily loop can now be used end-to-end from the web app. Per the spec, daily use should start now to collect real-world numbers and notes. After that, begin Increment 5 (Things, full-text search, Diagnostics).
+Increment 4 is complete. The daily loop can now be used end-to-end from the web app. Daily use is deferred until the planned features are in (Increment 5), per the Increment 4.1 decision — the 14-day dogfood and Increment 5 work now come first.
+
+After that, begin Increment 5 (Things, full-text search, Diagnostics).

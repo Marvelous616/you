@@ -1,9 +1,9 @@
 # Life Logger — Project State & Scope
 
 > **Audience:** Anyone joining the project (frontend, backend, or general)  
-> **Status:** Increment 3.9 complete (all 10 work packages done)  
+> **Status:** Increment 4 complete; Increment 4.1 hardening done (T1–T4), deploy drill (T5) pending  
 > **Repository:** `github.com/Marvelous616/you` (branch: `main`)  
-> **Date:** November 15, 2026
+> **Date:** November 17, 2026
 
 ---
 
@@ -25,8 +25,8 @@ Life Logger is a personal, self-hosted timeline system that records *what you di
 | Service | `lifelogger.service` — active + enabled |
 | Public URL | `https://zeserver.taile544af.ts.net/` via `tailscale serve` (tailnet only, HTTPS) |
 | Plain HTTP | Refused on port 8080 (loopback bind only) |
-| Database | SQLite WAL at `/var/lib/lifelogger/life.db`, schema 3 |
-| Version | `0.3.6` |
+| Database | SQLite WAL at `/var/lib/lifelogger/life.db`, schema 4 (shipped); schema 5 pending upgrade via Increment 4.1 T5 deploy drill |
+| Version | `0.3.6` (shipped); `0.3.7` pending deploy drill |
 | Health check | `GET /health` → `{"status":"ok","database":"connected",...}` |
 
 The server is deployed via a **Debian-native tarball path**: a release tarball is unpacked into `/opt/lifelogger/releases/vX.Y.Z/`, a `current` symlink switches versions, and an install script health-checks and rolls back automatically on failure. The database (`/var/lib/lifelogger/`) and host config (`/etc/lifelogger.env`) live outside releases and are never touched by upgrades.
@@ -144,6 +144,7 @@ All endpoints are under `/api/v1/`. The server also serves `/health` (unauthenti
 | POST | `/api/v1/days/:id/journal` | Yes | Save a journal entry |
 | POST | `/api/v1/days/:id/review` | Yes | Complete end-of-day review |
 | GET | `/api/v1/suggestions?status=pending` | Yes | List pending suggestions |
+| GET | `/api/v1/suggestions/:id` | Yes | Fetch one suggestion (including `externalId`) |
 | PATCH | `/api/v1/suggestions/:id` | Yes | Edit a suggestion |
 | POST | `/api/v1/suggestions/:id/accept` | Yes | Accept → creates an Event |
 | POST | `/api/v1/suggestions/:id/reject` | Yes | Reject |
@@ -180,6 +181,8 @@ The systemd unit loads env in order: package defaults → `/etc/lifelogger.env` 
 | 3 | Suggestions + Calendar extension (ICS import) | Done |
 | 3.5 | Packaging redo: Arch → Debian deployment | Done |
 | 3.9 | Fixes & hardening: HTTPS, off-machine backups, Debian deploy path, drills, web design spec | Done |
+| 4 | Close the daily loop: event edit/delete, suggestions edit/accept, tags/people management, templates, web redesign | Done |
+| 4.1 | Completion & hardening: alias uniqueness (migration 5), behavior tests, benchmark, docs | T1–T4 done; T5 deploy drill pending |
 
 All drills passed: upgrade/rollback, reboot, backup/restore, benchmark regression guard.
 
