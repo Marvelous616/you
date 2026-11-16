@@ -233,7 +233,7 @@ export class SqlitePersonRepository implements IPersonRepository {
     const updated: Person = {
       ...existing,
       ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
-      ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+      ...(patch.notes !== undefined ? { notes: patch.notes ?? undefined } : {}),
       updatedAt: new Date().toISOString(),
     };
     await this.save(updated);

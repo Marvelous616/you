@@ -10,6 +10,7 @@ interface TemplateTagRow {
   template_id: string;
   tag_id: string;
   is_primary: number;
+  updated_at?: string;
 }
 
 function rowToTemplateTag(row: TemplateTagRow): TemplateTag {
@@ -83,7 +84,7 @@ export class SqliteTemplateTagRepository implements ITemplateTagRepository {
     const records = recordsToReturn.map((row) => ({
       link: rowToTemplateTag(row),
       updatedAt: row.updated_at ?? '',
-    }));
+    })) as unknown as TimestampedEventTag[];
     const nextCursor =
       records.length > 0 ? records[records.length - 1].updatedAt : cursor;
 

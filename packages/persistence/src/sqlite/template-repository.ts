@@ -24,6 +24,7 @@ function rowToTemplate(row: TemplateRow): Template {
     name: row.name,
     title: row.title,
     defaultDurationMinutes: row.default_duration_minutes ?? undefined,
+    tagIds: [],
     special: row.special as Template['special'] ?? undefined,
     isPinned: row.is_pinned === 1,
     sortOrder: row.sort_order,

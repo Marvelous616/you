@@ -50,13 +50,11 @@ import {
   JournalEntry,
   Marker,
   Person,
-  PersonAlias,
   Suggestion,
   SuggestionOverrides,
   SuggestionStatus,
   Tag,
   Template,
-  TemplateTag,
   acceptSuggestion,
   applyEventPatch,
   buildEventFromSuggestion,
@@ -64,7 +62,6 @@ import {
   calculateDayFidelity,
   calendarEventsToSuggestions,
   createDefaultExtensionRegistry,
-  createParticipant,
   buildTemplate,
   editSuggestion,
   findTimelineGaps,
@@ -929,29 +926,30 @@ export function buildApp(options: AppOptions): FastifyInstance {
         // Reassign day if startAt changed
         if (request.body?.startAt !== undefined) {
           const days = await dayRepo.listAll();
-          const { dayId } = reassignDay(updated, days, updated.timezone || 'UTC');
+          const day = days.find((d) => d.id === updated.dayId);
+          const { dayId } = reassignDay(updated, days, day?.timezone ?? 'UTC');
           if (dayId !== updated.dayId) {
             await eventRepo.patch(updated.id, { dayId });
           }
         }
 
         db.exec('COMMIT');
+
+        const [eventTags, participants] = await Promise.all([
+          tagRepo.listEventTags(updated.id),
+          personRepo.listParticipants(updated.id),
+        ]);
+
+        return {
+          event: updated,
+          eventTags,
+          participants,
+        };
       } catch (err) {
         db.exec('ROLLBACK');
         reply.code(500).send({ error: `Failed to update event: ${String(err)}` });
         return;
       }
-
-      const [eventTags, participants] = await Promise.all([
-        tagRepo.listEventTags(updated.id),
-        personRepo.listParticipants(updated.id),
-      ]);
-
-      return {
-        event: updated,
-        eventTags,
-        participants,
-      };
     }
   );
 
@@ -1300,7 +1298,6 @@ export function buildApp(options: AppOptions): FastifyInstance {
     }
 
     const now = new Date();
-    const timestamp = now.toISOString();
 
     const template: Template = buildTemplate(
       {
@@ -1349,8 +1346,8 @@ export function buildApp(options: AppOptions): FastifyInstance {
         const updated = await templateRepo.patch(request.params.templateId, {
           name: request.body?.name,
           title: request.body?.title,
-          defaultDurationMinutes: request.body?.defaultDurationMinutes,
-          special: request.body?.special,
+          defaultDurationMinutes: request.body?.defaultDurationMinutes ?? undefined,
+          special: request.body?.special ?? undefined,
           isPinned: request.body?.isPinned,
           sortOrder: request.body?.sortOrder,
         });
@@ -1404,7 +1401,6 @@ export function buildApp(options: AppOptions): FastifyInstance {
         const draft = templateToEventDraft(template, startAt);
 
         const existingTags = await tagRepo.listTree();
-        const existingPeople = await personRepo.listAll();
         const resolvedTags = resolveTagsForEvent(
           `event-${Date.now()}`,
           (template.tagIds ?? []).map((t) => {

@@ -235,7 +235,7 @@ export class SqliteTagRepository implements ITagRepository {
       ...existing,
       ...(patch.name !== undefined ? { name: patch.name } : {}),
       ...(patch.color !== undefined ? { color: patch.color } : {}),
-      ...(patch.parentId !== undefined ? { parentId: patch.parentId } : {}),
+      ...(patch.parentId !== undefined ? { parentId: patch.parentId ?? undefined } : {}),
       updatedAt: new Date().toISOString(),
     };
     await this.save(updated);

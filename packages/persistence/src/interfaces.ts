@@ -13,7 +13,6 @@ import {
   SuggestionStatus,
   Tag,
   Template,
-  TemplateTag,
   UUID,
 } from '@life-logger/domain';
 
