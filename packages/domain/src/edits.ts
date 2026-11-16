@@ -194,17 +194,18 @@ export interface PersonTokenResult {
 
 export function resolvePersonToken(
   people: Person[],
-  token: string
+  token: string,
+  aliases?: Map<UUID, string[]>
 ): PersonTokenResult {
   const needle = token.trim().replace(/^@+/, '').toLowerCase();
   if (!needle) return { person: null, ambiguity: null };
 
-  const matches = people.filter(
-    (person) =>
-      !person.isDeleted &&
-      (person.displayName.toLowerCase() === needle ||
-        person.aliases.some((alias) => alias.toLowerCase() === needle))
-  );
+  const matches = people.filter((person) => {
+    if (person.isDeleted) return false;
+    if (person.displayName.toLowerCase() === needle) return true;
+    const personAliases = aliases?.get(person.id) ?? person.aliases;
+    return personAliases.some((alias) => alias.toLowerCase() === needle);
+  });
 
   if (matches.length === 0) return { person: null, ambiguity: null };
   if (matches.length === 1) return { person: matches[0], ambiguity: null };

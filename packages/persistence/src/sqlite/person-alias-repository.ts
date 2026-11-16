@@ -29,6 +29,14 @@ export class SqlitePersonAliasRepository implements IPersonAliasRepository {
   constructor(private readonly db: DatabaseSync) {}
 
   async save(alias: PersonAlias): Promise<void> {
+    // Reject cross-person duplicate live aliases (case-insensitive).
+    const existing = await this.findByAlias(alias.alias);
+    if (existing && existing.personId !== alias.personId) {
+      throw new Error(
+        `Alias "${alias.alias}" is already used by person ${existing.personId}`
+      );
+    }
+
     this.db
       .prepare(`
         INSERT INTO person_aliases (
@@ -74,11 +82,12 @@ export class SqlitePersonAliasRepository implements IPersonAliasRepository {
   }
 
   async findByAlias(alias: string): Promise<PersonAlias | null> {
+    const needle = alias.toLowerCase();
     const row = this.db
       .prepare(
-        'SELECT * FROM person_aliases WHERE alias = ? AND is_deleted = 0'
+        'SELECT * FROM person_aliases WHERE LOWER(alias) = ? AND is_deleted = 0 ORDER BY updated_at DESC LIMIT 1'
       )
-      .get(alias) as unknown as PersonAliasRow | undefined;
+      .get(needle) as unknown as PersonAliasRow | undefined;
     return row ? rowToPersonAlias(row) : null;
   }
 

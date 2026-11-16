@@ -1179,14 +1179,19 @@ export function buildApp(options: AppOptions): FastifyInstance {
       const aliases = request.body?.aliases ?? [];
       await personAliasRepo.deleteForPerson(request.params.personId);
       for (const alias of aliases) {
-        await personAliasRepo.save({
-          id: `alias-${request.params.personId}-${alias.replace(/[^a-z0-9]+/g, '-')}`,
-          personId: request.params.personId,
-          alias,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          isDeleted: false,
-        });
+        try {
+          await personAliasRepo.save({
+            id: `alias-${request.params.personId}-${alias.replace(/[^a-z0-9]+/g, '-')}`,
+            personId: request.params.personId,
+            alias,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            isDeleted: false,
+          });
+        } catch (err) {
+          reply.code(409).send({ error: String(err) });
+          return;
+        }
       }
 
       return { aliases };

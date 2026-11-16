@@ -115,6 +115,14 @@ export class SqlitePersonRepository implements IPersonRepository {
     return row ? rowToPerson(row) : null;
   }
 
+  async create(person: Person): Promise<void> {
+    const existing = await this.findById(person.id);
+    if (existing) {
+      throw new Error(`Person already exists: ${person.id}`);
+    }
+    await this.save(person);
+  }
+
   async findByNameOrAlias(name: string): Promise<Person | null> {
     const needle = normalizeName(name);
     if (!needle) return null;

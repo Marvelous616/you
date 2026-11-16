@@ -88,6 +88,7 @@ export interface TimestampedEventParticipant {
 export interface IPersonRepository {
   save(person: Person): Promise<void>;
   saveBatch(people: Person[]): Promise<void>;
+  create(person: Person): Promise<void>;
   findById(id: UUID): Promise<Person | null>;
   findByNameOrAlias(name: string): Promise<Person | null>;
   listAll(includeDeleted?: boolean): Promise<Person[]>;

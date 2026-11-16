@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Step 2 - Daily Loop.md",
+                "file": "Life Logger Implementation Plan.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Step 2 - Daily Loop"
+              "title": "Life Logger Implementation Plan"
             }
           }
         ]
@@ -188,9 +188,31 @@
       "bases:Create new base": false
     }
   },
-  "active": "c4e7c6f536be685a",
+  "active": "4aee054019520668",
   "lastOpenFiles": [
-    "Step 1 - Walking Skeleton.md",
-    "life-logger-high-level-design(2).md"
+    "packages/domain/src/edits.ts",
+    "Increment 4 Close the Daily Loop.md",
+    "Increment 4 Depth.md",
+    "zi5i48iz",
+    "ziQLF7LP",
+    "docs.zip",
+    "zihZiIec",
+    "Add Theme and Font Settings.zip",
+    "docs/frontend-handoff.md",
+    "docs/reports/increment-3.9-completion-report.md",
+    "packaging/debian/releases/v0.3.6/sedck16EP",
+    "packaging/debian/releases/lifelogger-0.3.7.tar.gz.sha256",
+    "packaging/debian/releases/lifelogger-0.3.7.tar.gz",
+    "packaging/debian/releases/v0.3.7/web/assets/index-GQS1NOy0.css",
+    "packaging/debian/releases/v0.3.7/web/assets/index-8zKpt5Yp.js",
+    "docs/web-design-spec.md",
+    "Increment 3.9 Fixes and Hardening.md",
+    "Increment 3.5 Repository, Server and Deployment.md",
+    "life-logger-high-level-design(2).md",
+    "Life Logger Implementation Plan.md",
+    "docs/reports/increment-3.5-completion-report.md",
+    "docs/reports/increment-3.5-android-deployment-report.md",
+    "Step 2 - Daily Loop.md",
+    "Step 1 - Walking Skeleton.md"
   ]
 }

@@ -221,6 +221,37 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    description: 'Increment 4.1: unique alias across all people, case-insensitive',
+    up: (db: DatabaseSync) => {
+      // Pre-check: find any live aliases that collide across people, case-insensitive.
+      // If any exist, abort so no changes are made.
+      const dups = db
+        .prepare(
+          `SELECT LOWER(alias) AS alias_lower, GROUP_CONCAT(person_id || ':' || alias) AS people
+           FROM person_aliases
+           WHERE is_deleted = 0
+           GROUP BY LOWER(alias)
+           HAVING COUNT(DISTINCT person_id) > 1`
+        )
+        .all() as Array<{ alias_lower: string; people: string }>;
+
+      if (dups.length > 0) {
+        const detail = dups
+          .map((d) => `${d.alias_lower}: ${d.people}`)
+          .join('; ');
+        throw new Error(
+          `Cannot apply migration 5: duplicate live aliases across people: ${detail}`
+        );
+      }
+
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_person_aliases_live_alias_global
+          ON person_aliases(LOWER(alias)) WHERE is_deleted = 0;
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

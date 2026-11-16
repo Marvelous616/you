@@ -41,7 +41,7 @@ describe('server operations endpoints', () => {
     expect(body.status).toBe('ok');
     expect(body.database).toBe('connected');
     expect(body.version).toBe('v0.3.5-increment-3.5');
-    expect(body.schemaVersion).toBe(4);
+    expect(body.schemaVersion).toBe(5);
     expect(body.syncProtocolVersion).toBe(SYNC_PROTOCOL_VERSION);
     expect(body.timestamp).toEqual(expect.any(String));
   });
@@ -95,6 +95,87 @@ describe('server operations endpoints', () => {
 
     const api = await app.inject({ method: 'GET', url: '/api/v1/tags' });
     expect(api.statusCode).toBe(401);
+  });
+
+  it('rejects duplicate alias across people on PUT /people/:id/aliases', async () => {
+    // Create two people
+    const resA = await app.inject({
+      method: 'POST',
+      url: '/api/v1/people',
+      body: { displayName: 'Alice Smith', aliases: [] },
+    });
+    const personA = JSON.parse(resA.body);
+    const resB = await app.inject({
+      method: 'POST',
+      url: '/api/v1/people',
+      body: { displayName: 'Bob Jones', aliases: [] },
+    });
+    const personB = JSON.parse(resB.body);
+
+    // Give person A an alias
+    const res1 = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/people/${personA.id}/aliases`,
+      body: { aliases: ['alice'] },
+    });
+    expect(res1.statusCode).toBe(200);
+
+    // Person B tries to use the same alias - should conflict
+    const res2 = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/people/${personB.id}/aliases`,
+      body: { aliases: ['alice'] },
+    });
+    expect(res2.statusCode).toBe(409);
+    const body2 = JSON.parse(res2.body);
+    expect(body2.error).toContain('alice');
+    expect(body2.error).toContain(personA.id);
+
+    // Person B tries same alias with different case - should also conflict
+    const res3 = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/people/${personB.id}/aliases`,
+      body: { aliases: ['ALICE'] },
+    });
+    expect(res3.statusCode).toBe(409);
+  });
+
+  it('allows reusing a deleted alias', async () => {
+    // Create two people
+    const resA = await app.inject({
+      method: 'POST',
+      url: '/api/v1/people',
+      body: { displayName: 'Alice Smith', aliases: [] },
+    });
+    const personA = JSON.parse(resA.body);
+    const resB = await app.inject({
+      method: 'POST',
+      url: '/api/v1/people',
+      body: { displayName: 'Bob Jones', aliases: [] },
+    });
+    const personB = JSON.parse(resB.body);
+
+    // Person A gets an alias
+    await app.inject({
+      method: 'PUT',
+      url: `/api/v1/people/${personA.id}/aliases`,
+      body: { aliases: ['alice'] },
+    });
+
+    // Person A removes the alias
+    await app.inject({
+      method: 'PUT',
+      url: `/api/v1/people/${personA.id}/aliases`,
+      body: { aliases: [] },
+    });
+
+    // Person B can now use it
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/people/${personB.id}/aliases`,
+      body: { aliases: ['alice'] },
+    });
+    expect(res.statusCode).toBe(200);
   });
 });
 
