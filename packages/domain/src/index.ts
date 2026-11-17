@@ -11,3 +11,4 @@ export * from './calendar.js';
 export * from './extensions.js';
 export * from './edits.js';
 export * from './templates.js';
+export * from './things.js';
