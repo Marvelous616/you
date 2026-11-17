@@ -77,7 +77,7 @@ export const EventDetail: React.FC<EventDetailProps> = ({
       await patchEvent(event.id, {
         title: event.title,
         startAt: event.startAt,
-        endAt: event.endAt,
+        endAt: event.endAt ?? null,
         notes: event.notes,
       });
       onEventUpdated();
@@ -319,7 +319,11 @@ export const EventDetail: React.FC<EventDetailProps> = ({
                   type="datetime-local"
                   value={event.endAt ? new Date(event.endAt).toISOString().slice(0, 16) : ''}
                   onChange={(e) =>
-                    setEvent({ ...event, endAt: `${e.target.value}:00.000Z` })}
+                    setEvent({
+                      ...event,
+                      endAt: e.target.value ? `${e.target.value}:00.000Z` : undefined,
+                    })
+                  }
                   disabled={!editing || loading || event.isDeleted}
                   style={{
                     width: '100%',

@@ -153,6 +153,20 @@ describe('applyEventPatch', () => {
     expect(result.errors[0].message).toBe('End time must be after start time');
   });
 
+  it('clears endAt when patched with null (event still running)', () => {
+    const result = applyEventPatch(baseEvent, { endAt: null });
+    expect(result.errors).toHaveLength(0);
+    expect(result.event.endAt).toBeUndefined();
+  });
+
+  it('accepts a blank end time on an already-open event', () => {
+    const openEvent: Event = { ...baseEvent, endAt: undefined, endPrecision: 'unknown' };
+    const result = applyEventPatch(openEvent, { title: 'Still going', endAt: null });
+    expect(result.errors).toHaveLength(0);
+    expect(result.event.endAt).toBeUndefined();
+    expect(result.event.title).toBe('Still going');
+  });
+
   it('keeps source unchanged on edit', () => {
     const result = applyEventPatch(baseEvent, { title: 'New title' });
     expect(result.event.source).toBe('live');
