@@ -20,7 +20,7 @@ import {
   TypeDefinition,
 } from '@life-logger/domain';
 
-const API_BASE = 'http://100.110.82.42:8080';
+const API_BASE = '';
 
 export interface DayTimeline {
   day: Day;
