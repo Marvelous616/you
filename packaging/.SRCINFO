@@ -1,6 +1,6 @@
 pkgbase = lifelogger
 	pkgdesc = Personal offline-first timeline and life event tracker
-	pkgver = 0.3.6
+	pkgver = 0.3.7
 	pkgrel = 1
 	url = https://github.com/Marvelous616/you
 	install = lifelogger.install
@@ -11,7 +11,7 @@ pkgbase = lifelogger
 	makedepends = npm
 	depends = nodejs>=22.5
 	depends = sqlite
-	source = lifelogger-0.3.6::git+https://github.com/Marvelous616/you.git#tag=v0.3.6-increment-3.5
+	source = lifelogger-0.3.7::git+https://github.com/Marvelous616/you.git#tag=v0.3.7-increment-3.5
 	sha256sums = SKIP
 
 pkgname = lifelogger

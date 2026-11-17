@@ -1,6 +1,6 @@
 {
   "name": "life-logger",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "private": true,
   "description": "Life Logger - personal offline-first timeline and life event tracker",
   "workspaces": [

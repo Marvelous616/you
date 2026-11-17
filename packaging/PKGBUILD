@@ -1,6 +1,6 @@
 # Maintainer: Life Logger owner <noreply@example.invalid>
 pkgname=lifelogger
-pkgver=0.3.6
+pkgver=0.3.7
 pkgrel=1
 pkgdesc='Personal offline-first timeline and life event tracker'
 arch=('any')
