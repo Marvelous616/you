@@ -5,6 +5,7 @@ import {
   Event,
   EventParticipant,
   EventTag,
+  EventThing,
   JournalEntry,
   Marker,
   Person,
@@ -13,6 +14,7 @@ import {
   SuggestionStatus,
   Tag,
   Template,
+  TypeDefinition,
   UUID,
 } from '@life-logger/domain';
 
@@ -178,4 +180,16 @@ export interface ICalendarItemRepository {
   findByEventId(eventId: UUID): Promise<CalendarItem | null>;
   findByExternalId(externalId: string): Promise<CalendarItem | null>;
   listAll(): Promise<CalendarItem[]>;
+}
+
+export interface ITypeDefinitionRepository {
+  save(typeDefinition: TypeDefinition): Promise<void>;
+  findById(id: UUID): Promise<TypeDefinition | null>;
+  listAll(includeDeleted?: boolean): Promise<TypeDefinition[]>;
+}
+
+export interface IEventThingRepository {
+  save(thing: EventThing): Promise<void>;
+  findByEventId(eventId: UUID): Promise<EventThing | null>;
+  listAll(includeDeleted?: boolean): Promise<EventThing[]>;
 }

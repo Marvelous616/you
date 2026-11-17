@@ -13,3 +13,5 @@ export * from './sqlite/calendar-item-repository.js';
 export * from './sqlite/template-repository.js';
 export * from './sqlite/template-tag-repository.js';
 export * from './sqlite/person-alias-repository.js';
+export * from './sqlite/type-definition-repository.js';
+export * from './sqlite/event-thing-repository.js';

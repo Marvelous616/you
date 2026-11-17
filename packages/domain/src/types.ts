@@ -184,6 +184,38 @@ export interface CalendarItem {
 }
 
 /**
+ * A runtime-creatable typed field definition (a "Thing" schema). Things let
+ * users add structured fields to events without a schema migration per field.
+ */
+export interface TypeDefinition extends EntityMetadata {
+  name: string;
+  /** Field kind, e.g. "text", "number", "date", "select". */
+  fieldType: string;
+  /** Optional JSON schema for the value; kept intentionally small and
+   *  JSON-friendly so no database migration is needed per field. */
+  schema?: Record<string, unknown>;
+}
+
+/**
+ * A typed value of a TypeDefinition attached to a subject (an event for now).
+ */
+export interface TypeInstance extends EntityMetadata {
+  typeDefinitionId: UUID;
+  subjectType?: 'event';
+  subjectId?: UUID;
+  value: Record<string, unknown>;
+}
+
+/**
+ * An event carrying a typed value from a TypeDefinition.
+ */
+export interface EventThing extends EntityMetadata {
+  eventId: UUID;
+  typeDefinitionId: UUID;
+  value: Record<string, unknown>;
+}
+
+/**
  * Generic state-of-mind / context sample. Dimensions are strings so new
  * dimensions require no schema migration.
  */

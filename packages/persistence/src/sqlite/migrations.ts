@@ -252,6 +252,36 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 6,
+    description: 'Increment 5: Things typed dynamic events (type definitions and event things)',
+    up: (db: DatabaseSync) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS type_definitions (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          field_type TEXT NOT NULL,
+          schema_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS event_things (
+          id TEXT PRIMARY KEY,
+          event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          type_definition_id TEXT NOT NULL REFERENCES type_definitions(id) ON DELETE CASCADE,
+          value_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_event_things_event ON event_things(event_id);
+        CREATE INDEX IF NOT EXISTS idx_event_things_type ON event_things(type_definition_id);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

@@ -2,7 +2,7 @@
  * Bumped only when the push/pull payload shape changes. Reported by /health so
  * a client can detect a server that is too old or too new.
  */
-export const SYNC_PROTOCOL_VERSION = 2;
+export const SYNC_PROTOCOL_VERSION = 3;
 
 export type EntitySyncType =
   | 'marker'
@@ -17,7 +17,9 @@ export type EntitySyncType =
   | 'suggestion'
   | 'template'
   | 'template_tag'
-  | 'person_alias';
+  | 'person_alias'
+  | 'type_definition'
+  | 'event_thing';
 
 export const ENTITY_SYNC_TYPES: readonly EntitySyncType[] = [
   'marker',
@@ -33,6 +35,8 @@ export const ENTITY_SYNC_TYPES: readonly EntitySyncType[] = [
   'template',
   'template_tag',
   'person_alias',
+  'type_definition',
+  'event_thing',
 ];
 
 export interface SyncRecordPayload<T = unknown> {
