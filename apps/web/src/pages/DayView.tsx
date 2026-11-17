@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Event,
   Suggestion,
@@ -86,11 +86,14 @@ export const DayView: React.FC<DayViewProps> = ({
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [wakeEditorOpen, setWakeEditorOpen] = useState(false);
   const [wakeTimeDraft, setWakeTimeDraft] = useState('');
+  const initialLoadDone = useRef(false);
 
   const loadData = useCallback(async () => {
+    // Only the initial load shows the full loading state; the 10s refresh
+    // updates data silently so the page does not appear to reload.
+    if (!initialLoadDone.current) setIsLoading(true);
+    setError(null);
     try {
-      setIsLoading(true);
-      setError(null);
       const health = await fetchHealth();
       if (!health) throw new Error('Server unreachable');
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -101,6 +104,7 @@ export const DayView: React.FC<DayViewProps> = ({
       ]);
       setTimeline(dayTimeline);
       setSuggestions(pendingSuggestions);
+      initialLoadDone.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load day');
     } finally {
