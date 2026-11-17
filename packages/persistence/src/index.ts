@@ -15,3 +15,4 @@ export * from './sqlite/template-tag-repository.js';
 export * from './sqlite/person-alias-repository.js';
 export * from './sqlite/type-definition-repository.js';
 export * from './sqlite/event-thing-repository.js';
+export * from './sqlite/search-repository.js';

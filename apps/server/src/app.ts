@@ -20,6 +20,7 @@ import {
   SqliteTemplateRepository,
   SqliteTemplateTagRepository,
   SqliteTypeDefinitionRepository,
+  SqliteSearchRepository,
   ICalendarItemRepository,
   ICaptureRepository,
   IDayRepository,
@@ -34,6 +35,7 @@ import {
   ITemplateRepository,
   ITemplateTagRepository,
   ITypeDefinitionRepository,
+  ISearchRepository,
   runMigrations,
 } from '@life-logger/persistence';
 import {
@@ -79,6 +81,7 @@ import {
   resolvePeopleForEvent,
   resolveTagsForEvent,
   templateToEventDraft,
+  normalizeSearchQuery,
 } from '@life-logger/domain';
 
 export interface AppOptions {
@@ -269,6 +272,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
   const templateTagRepo: ITemplateTagRepository = new SqliteTemplateTagRepository(db);
   const typeDefinitionRepo: ITypeDefinitionRepository = new SqliteTypeDefinitionRepository(db);
   const eventThingRepo: IEventThingRepository = new SqliteEventThingRepository(db);
+  const searchRepo: ISearchRepository = new SqliteSearchRepository(db);
   const extensionRegistry = createDefaultExtensionRegistry();
 
   const server = Fastify({ logger: options.logger ?? false });
@@ -342,6 +346,13 @@ export function buildApp(options: AppOptions): FastifyInstance {
       reply.code(503);
       return { status: 'error', database: 'unavailable', ...base };
     }
+  });
+
+  server.get<{ Querystring: { q?: string; limit?: string } }>('/api/v1/search', async (request) => {
+    const query = request.query.q ?? '';
+    const limit = request.query.limit ? Math.max(1, parseInt(request.query.limit, 10)) : 50;
+    const hits = await searchRepo.search(query, limit);
+    return { query: normalizeSearchQuery(query), hits };
   });
 
   // ---------------------------------------------------------------------------

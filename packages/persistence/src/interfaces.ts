@@ -16,6 +16,7 @@ import {
   Template,
   TypeDefinition,
   UUID,
+  SearchHit,
 } from '@life-logger/domain';
 
 export interface CursorResult<T> {
@@ -201,4 +202,8 @@ export interface IEventThingRepository {
   listAll(includeDeleted?: boolean): Promise<EventThing[]>;
   listModifiedSince(cursor: string, limit?: number): Promise<CursorResult<EventThing>>;
   softDelete(id: UUID): Promise<void>;
+}
+
+export interface ISearchRepository {
+  search(query: string, limit?: number): Promise<SearchHit[]>;
 }

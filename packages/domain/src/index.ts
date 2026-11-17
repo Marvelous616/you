@@ -12,3 +12,4 @@ export * from './extensions.js';
 export * from './edits.js';
 export * from './templates.js';
 export * from './things.js';
+export * from './search.js';
