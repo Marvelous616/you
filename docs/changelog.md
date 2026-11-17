@@ -2,6 +2,19 @@
 
 Incremental, task-level entries. Format: date, increment, task, change, gate status.
 
+## Increment 5 — Things, Search and Diagnostics
+
+### T1 — Things typed dynamic events (2026-11-17)
+
+- Added `TypeDefinition`, `TypeInstance` and `EventThing` domain entities; Things rules in `packages/domain/src/things.ts` (`validateTypeDefinitionDraft`, `validateTypeInstance`, `buildEventThing`).
+- Added migration 6: `type_definitions` and `event_things` tables with foreign keys to events/type definitions and a partial unique index on live (event_id, type_definition_id) pairs.
+- Added `SqliteTypeDefinitionRepository` and `SqliteEventThingRepository`; sync deltas via `listModifiedSince`.
+- Sync protocol bumped to 3 with `type_definition` and `event_thing` entity types.
+- Server API: `GET/POST/PATCH/DELETE /api/v1/type-definitions`, `POST /api/v1/events/:eventId/things`, `DELETE /api/v1/events/:eventId/things/:typeDefinitionId`, `GET /api/v1/events/:eventId` returns live things.
+- Web: type definition + event thing API client methods; event detail renders typed thing values.
+- Commits: `d5f3894` (stage 1), `9caf420` (stage 2), `644747e` (stage 3), `06a34b0` (stage 4).
+- Gates: typecheck, lint, tests (209), build green.
+
 ## Increment 4.1 — Completion and Hardening
 
 ### T1 — Alias uniqueness (2026-11-17)
