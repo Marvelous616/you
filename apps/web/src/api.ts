@@ -4,6 +4,7 @@ import {
   Event,
   EventParticipant,
   EventTag,
+  EventThing,
   JournalEntry,
   Marker,
   Person,
@@ -13,6 +14,7 @@ import {
   Tag,
   Template,
   TimelineGap,
+  TypeDefinition,
 } from '@life-logger/domain';
 
 const API_BASE = 'http://100.110.82.42:8080';
@@ -229,6 +231,7 @@ export interface EventDetailResult {
   event: Event;
   eventTags: EventTag[];
   participants: EventParticipant[];
+  things?: EventThing[];
 }
 
 export async function getEvent(eventId: string): Promise<EventDetailResult> {
@@ -529,6 +532,99 @@ export async function logTemplate(
     }
   );
   return readJson<LogTemplateResult>(res, 'Failed to log template');
+}
+
+// ---------------------------------------------------------------------------
+// Things: typed dynamic fields (type definitions and event things)
+// ---------------------------------------------------------------------------
+
+export interface CreateTypeDefinitionInput {
+  name: string;
+  fieldType: string;
+  schema?: Record<string, unknown>;
+}
+
+export interface PatchTypeDefinitionInput {
+  name?: string;
+  fieldType?: string;
+  schema?: Record<string, unknown> | null;
+}
+
+export async function fetchTypeDefinitions(): Promise<TypeDefinition[]> {
+  const res = await fetch(`${API_BASE}/api/v1/type-definitions`);
+  return readJson<TypeDefinition[]>(res, 'Failed to fetch type definitions');
+}
+
+export async function createTypeDefinition(
+  input: CreateTypeDefinitionInput
+): Promise<TypeDefinition> {
+  const res = await fetch(`${API_BASE}/api/v1/type-definitions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return readJson<TypeDefinition>(res, 'Failed to create type definition');
+}
+
+export async function patchTypeDefinition(
+  typeDefinitionId: string,
+  input: PatchTypeDefinitionInput
+): Promise<TypeDefinition> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/type-definitions/${encodeURIComponent(typeDefinitionId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }
+  );
+  return readJson<TypeDefinition>(res, 'Failed to update type definition');
+}
+
+export async function deleteTypeDefinition(
+  typeDefinitionId: string
+): Promise<{ id: string; isDeleted: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/type-definitions/${encodeURIComponent(typeDefinitionId)}`,
+    { method: 'DELETE' }
+  );
+  return readJson<{ id: string; isDeleted: boolean }>(res, 'Failed delete type definition');
+}
+
+export interface AttachEventThingInput {
+  typeDefinitionId: string;
+  value?: Record<string, unknown>;
+}
+
+export async function attachEventThing(
+  eventId: string,
+  input: AttachEventThingInput
+): Promise<EventThing> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/events/${encodeURIComponent(eventId)}/things`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }
+  );
+  return readJson<EventThing>(res, 'Failed attach event thing');
+}
+
+export async function deleteEventThing(
+  eventId: string,
+  typeDefinitionId: string
+): Promise<{ id: string; eventId: string; isDeleted: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/events/${encodeURIComponent(eventId)}/things/${encodeURIComponent(
+      typeDefinitionId
+    )}`,
+    { method: 'DELETE' }
+  );
+  return readJson<{ id: string; eventId: string; isDeleted: boolean }>(
+    res,
+    'Failed delete event thing'
+  );
 }
 
 // ---------------------------------------------------------------------------

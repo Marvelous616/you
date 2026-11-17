@@ -824,12 +824,15 @@ export function buildApp(options: AppOptions): FastifyInstance {
         return;
       }
 
-      const [eventTags, participants] = await Promise.all([
+      const [eventTags, participants, things] = await Promise.all([
         tagRepo.listEventTags(event.id),
         personRepo.listParticipants(event.id),
+        eventThingRepo
+          .listAll()
+          .then((all) => all.filter((thing) => thing.eventId === event.id && !thing.isDeleted)),
       ]);
 
-      return { event, eventTags, participants };
+      return { event, eventTags, participants, things };
     }
   );
 

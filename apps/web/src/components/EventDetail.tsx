@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Event, EventParticipant, EventTag } from '@life-logger/domain';
+import { Event, EventParticipant, EventTag, EventThing, TypeDefinition } from '@life-logger/domain';
 import {
   deleteEvent,
+  fetchTypeDefinitions,
   getEvent,
   patchEvent,
   restoreEvent,
@@ -23,6 +24,8 @@ export const EventDetail: React.FC<EventDetailProps> = ({
   const [event, setEvent] = useState<Event | null>(null);
   const [eventTags, setEventTags] = useState<EventTag[]>([]);
   const [participants, setParticipants] = useState<EventParticipant[]>([]);
+  const [things, setThings] = useState<EventThing[]>([]);
+  const [typeDefinitions, setTypeDefinitions] = useState<TypeDefinition[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +38,7 @@ export const EventDetail: React.FC<EventDetailProps> = ({
       setEvent(result.event);
       setEventTags(result.eventTags);
       setParticipants(result.participants);
+      setThings(result.things ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load event');
     } finally {
@@ -45,6 +49,21 @@ export const EventDetail: React.FC<EventDetailProps> = ({
   useEffect(() => {
     loadEvent();
   }, [eventId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    fetchTypeDefinitions()
+      .then((defs) => {
+        if (!cancelled) setTypeDefinitions(defs);
+      })
+      .catch(() => {
+        /* Things rendering is best-effort; ignore fetch failures. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   const handleSave = async () => {
     if (!event) return;
@@ -383,6 +402,78 @@ export const EventDetail: React.FC<EventDetailProps> = ({
                 ))}
               </div>
             </div>
+
+            {things.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    marginBottom: '6px',
+                    fontSize: '0.7rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    color: '#94a3b8',
+                  }}
+                >
+                  Things ({things.length})
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {things.map((thing) => {
+                    const typeDef = typeDefinitions.find(
+                      (def) => def.id === thing.typeDefinitionId
+                    );
+                    const entries = Object.entries(thing.value ?? {});
+                    return (
+                      <div
+                        key={thing.id}
+                        style={{
+                          backgroundColor: '#1e293b',
+                          border: '1px solid #334155',
+                          borderRadius: '8px',
+                          padding: '10px 12px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            color: '#c4b5fd',
+                            marginBottom: entries.length > 0 ? '6px' : '0',
+                          }}
+                        >
+                          {typeDef?.name ?? thing.typeDefinitionId}
+                          {typeDef?.fieldType ? ` (${typeDef.fieldType})` : ''}
+                        </div>
+                        {entries.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {entries.map(([key, value]) => (
+                              <span
+                                key={key}
+                                style={{
+                                  backgroundColor: '#334155',
+                                  color: '#e2e8f0',
+                                  borderRadius: '999px',
+                                  padding: '2px 8px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {key}: {String(value)}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                            No value recorded
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div
               style={{
