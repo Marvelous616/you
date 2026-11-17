@@ -46,6 +46,20 @@ function formatClock(iso?: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Build an ISO timestamp for a time like "07:30" on the given local date. */
+function timeStringToIso(localDate: string, time: string): string {
+  const [hours, minutes] = time.split(':').map((n) => parseInt(n, 10));
+  const date = new Date(`${localDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
+  return date.toISOString();
+}
+
+/** Format an ISO timestamp as "HH:MM" for a time input. */
+function isoToTimeInput(iso?: string): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
 interface DayViewProps {
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
@@ -70,6 +84,8 @@ export const DayView: React.FC<DayViewProps> = ({
   const [suggestionEditOpen, setSuggestionEditOpen] = useState(false);
   const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [wakeEditorOpen, setWakeEditorOpen] = useState(false);
+  const [wakeTimeDraft, setWakeTimeDraft] = useState('');
 
   const loadData = useCallback(async () => {
     try {
@@ -107,6 +123,21 @@ export const DayView: React.FC<DayViewProps> = ({
       setError(err instanceof Error ? err.message : 'Failed to start day');
     }
   }, [timeline, loadData]);
+
+  const handleSetCustomWake = useCallback(
+    async (time: string) => {
+      if (!timeline || !time) return;
+      try {
+        const wakeAt = timeStringToIso(timeline.day.localDate, time);
+        await updateDay(timeline.day.id, { wakeAt });
+        setWakeEditorOpen(false);
+        await loadData();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to set wake time');
+      }
+    },
+    [timeline, loadData]
+  );
 
   const handleQuickEntry = useCallback(
     async (text: string) => {
@@ -313,15 +344,53 @@ export const DayView: React.FC<DayViewProps> = ({
                     {Math.round(coverage * 100)}% covered · {gaps.length} gap{gaps.length === 1 ? '' : 's'} · {events.length} event{events.length === 1 ? '' : 's'}
                   </div>
                 </div>
-                {!day.wakeAt && (
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={handleWake}
-                    disabled={!day}
-                  >
-                    Wake up
-                  </button>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {wakeEditorOpen ? (
+                    <>
+                      <input
+                        type="time"
+                        className="input"
+                        value={wakeTimeDraft}
+                        onChange={(e) => setWakeTimeDraft(e.target.value)}
+                        style={{ width: '130px' }}
+                      />
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={!wakeTimeDraft}
+                        onClick={() => handleSetCustomWake(wakeTimeDraft)}
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setWakeEditorOpen(false)}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          setWakeTimeDraft(day.wakeAt ? isoToTimeInput(day.wakeAt) : '');
+                          setWakeEditorOpen(true);
+                        }}
+                      >
+                        {day.wakeAt ? 'Edit wake time' : 'Set custom time'}
+                      </button>
+                      {!day.wakeAt && (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={handleWake}
+                          disabled={!day}
+                        >
+                          Wake up
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
               <div className="coverage-track">
                 <div className="coverage-fill" style={{ width: `${Math.round(Math.min(1, coverage) * 100)}%` }} />
