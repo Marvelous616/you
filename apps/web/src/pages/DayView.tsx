@@ -29,6 +29,7 @@ import { ServerStatus } from '../components/ServerStatus';
 import { SuggestionCard } from '../components/SuggestionCard';
 import { SuggestionEdit } from '../components/SuggestionEdit';
 import { EventDetail } from '../components/EventDetail';
+import { Diagnostics } from '../components/Diagnostics';
 import { Settings } from './Settings';
 
 function newId(prefix: string): string {
@@ -61,6 +62,7 @@ export const DayView: React.FC<DayViewProps> = ({ onSettingsOpen }) => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [suggestionEditOpen, setSuggestionEditOpen] = useState(false);
   const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(null);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -251,6 +253,13 @@ export const DayView: React.FC<DayViewProps> = ({ onSettingsOpen }) => {
           >
             Settings
           </button>
+          <button
+            type="button"
+            className="nav-item"
+            onClick={() => setDiagnosticsOpen(true)}
+          >
+            Diagnostics
+          </button>
         </div>
       </header>
 
@@ -394,6 +403,11 @@ export const DayView: React.FC<DayViewProps> = ({ onSettingsOpen }) => {
           isOpen={eventDetailOpen}
           onClose={() => setEventDetailOpen(false)}
           onEventUpdated={handleEventUpdated}
+        />
+
+        <Diagnostics
+          isOpen={diagnosticsOpen}
+          onClose={() => setDiagnosticsOpen(false)}
         />
 
         <SuggestionEdit

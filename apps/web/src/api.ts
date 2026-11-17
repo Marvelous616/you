@@ -1,5 +1,6 @@
 import {
   Capture,
+  CrashReport,
   Day,
   Event,
   EventParticipant,
@@ -7,6 +8,7 @@ import {
   EventThing,
   JournalEntry,
   Marker,
+  PerfSample,
   Person,
   SearchHit,
   Suggestion,
@@ -638,6 +640,56 @@ export async function search(query: string, limit?: number): Promise<SearchHit[]
   if (limit) params.set('limit', String(limit));
   const res = await fetch(`${API_BASE}/api/v1/search?${params.toString()}`);
   return readJson<SearchHit[]>(res, 'Failed to search');
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics: crash reports and perf samples (system data only)
+// ---------------------------------------------------------------------------
+
+export async function fetchCrashReports(includeDeleted = false): Promise<CrashReport[]> {
+  const query = includeDeleted ? '?includeDeleted=true' : '';
+  const res = await fetch(`${API_BASE}/api/v1/diagnostics/crash-reports${query}`);
+  return readJson<CrashReport[]>(res, 'Failed to fetch crash reports');
+}
+
+export async function postCrashReport(report: CrashReport): Promise<{ id: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/diagnostics/crash-reports`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(report),
+  });
+  return readJson<{ id: string }>(res, 'Failed to post crash report');
+}
+
+export async function fetchPerfSamples(includeDeleted = false): Promise<PerfSample[]> {
+  const query = includeDeleted ? '?includeDeleted=true' : '';
+  const res = await fetch(`${API_BASE}/api/v1/diagnostics/perf-samples${query}`);
+  return readJson<PerfSample[]>(res, 'Failed to fetch perf samples');
+}
+
+export async function postPerfSample(sample: PerfSample): Promise<{ id: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/diagnostics/perf-samples`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(sample),
+  });
+  return readJson<{ id: string }>(res, 'Failed to post perf sample');
+}
+
+export async function pruneDiagnostics(retentionDays: number): Promise<{
+  pruned: number;
+  retentionDays: number;
+}> {
+  const res = await fetch(
+    `${API_BASE}/api/v1/diagnostics/prune?retentionDays=${encodeURIComponent(
+      String(retentionDays)
+    )}`,
+    { method: 'POST' }
+  );
+  return readJson<{ pruned: number; retentionDays: number }>(
+    res,
+    'Failed to prune diagnostics'
+  );
 }
 
 // ---------------------------------------------------------------------------
