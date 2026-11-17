@@ -32,6 +32,8 @@ import { EventDetail } from '../components/EventDetail';
 import { Diagnostics } from '../components/Diagnostics';
 import { Settings } from './Settings';
 
+type Theme = 'light' | 'dark';
+
 function newId(prefix: string): string {
   const random =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -46,10 +48,16 @@ function formatClock(iso?: string): string {
 }
 
 interface DayViewProps {
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
   onSettingsOpen: () => void;
 }
 
-export const DayView: React.FC<DayViewProps> = ({ onSettingsOpen }) => {
+export const DayView: React.FC<DayViewProps> = ({
+  theme,
+  onThemeChange,
+  onSettingsOpen,
+}) => {
   const [timeline, setTimeline] = useState<DayTimeline | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -260,6 +268,13 @@ export const DayView: React.FC<DayViewProps> = ({ onSettingsOpen }) => {
           >
             Diagnostics
           </button>
+          <button
+            type="button"
+            className="nav-item"
+            onClick={() => onThemeChange(theme === 'light' ? 'dark' : 'light')}
+          >
+            {theme === 'light' ? 'Dark mode' : 'Light mode'}
+          </button>
         </div>
       </header>
 
@@ -417,7 +432,11 @@ export const DayView: React.FC<DayViewProps> = ({ onSettingsOpen }) => {
           onSuggestionUpdated={loadData}
         />
 
-        <Settings onClose={() => onSettingsOpen()} />
+        <Settings
+          theme={theme}
+          onThemeChange={onThemeChange}
+          onClose={() => onSettingsOpen()}
+        />
       </div>
 
       <footer className="footer">

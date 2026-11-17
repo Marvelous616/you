@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Event, EventParticipant, EventTag, EventThing, TypeDefinition } from '@life-logger/domain';
 import {
   deleteEvent,
+  deleteEventThing,
   fetchTypeDefinitions,
+  attachEventThing,
   getEvent,
   patchEvent,
   restoreEvent,
@@ -26,6 +28,8 @@ export const EventDetail: React.FC<EventDetailProps> = ({
   const [participants, setParticipants] = useState<EventParticipant[]>([]);
   const [things, setThings] = useState<EventThing[]>([]);
   const [typeDefinitions, setTypeDefinitions] = useState<TypeDefinition[]>([]);
+  const [attachTypeDefId, setAttachTypeDefId] = useState<string>('');
+  const [attachValue, setAttachValue] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +116,46 @@ export const EventDetail: React.FC<EventDetailProps> = ({
       setError(err instanceof Error ? err.message : 'Failed to restore event');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAttachThing = async () => {
+    if (!event) return;
+    if (!attachTypeDefId || !attachValue.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const parsed = JSON.parse(attachValue);
+      await attachEventThing(event.id, {
+        typeDefinitionId: attachTypeDefId,
+        value: parsed,
+      });
+      setAttachTypeDefId('');
+      setAttachValue('');
+      setLoading(false);
+      const result = await getEvent(event.id);
+      setThings(result.things ?? []);
+      onEventUpdated();
+    } catch (err) {
+      setLoading(false);
+      setError(
+        err instanceof Error ? err.message : 'Failed to attach thing (value must be valid JSON)',
+      );
+    }
+  };
+
+  const handleDeleteThing = async (thingId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const thing = things.find((t) => t.id === thingId);
+      if (!thing) return;
+      await deleteEventThing(eventId, thing.typeDefinitionId);
+      setThings((prev) => prev.filter((t) => t.id !== thingId));
+      onEventUpdated();
+    } catch (err) {
+      setLoading(false);
+      setError(err instanceof Error ? err.message : 'Failed to delete thing');
     }
   };
 
@@ -440,10 +484,32 @@ export const EventDetail: React.FC<EventDetailProps> = ({
                             fontWeight: 700,
                             color: '#c4b5fd',
                             marginBottom: entries.length > 0 ? '6px' : '0',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
                           }}
                         >
-                          {typeDef?.name ?? thing.typeDefinitionId}
-                          {typeDef?.fieldType ? ` (${typeDef.fieldType})` : ''}
+                          <div>
+                            {typeDef?.name ?? thing.typeDefinitionId}
+                            {typeDef?.fieldType ? ` (${typeDef.fieldType})` : ''}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteThing(thing.id)}
+                            disabled={loading}
+                            style={{
+                              backgroundColor: 'transparent',
+                              color: '#7f1d1d',
+                              border: '1px solid #7f1d1d',
+                              borderRadius: '6px',
+                              padding: '2px 8px',
+                              fontSize: '0.7rem',
+                              cursor: 'pointer',
+                              marginLeft: '8px',
+                            }}
+                          >
+                            Delete
+                          </button>
                         </div>
                         {entries.length > 0 ? (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -474,6 +540,85 @@ export const EventDetail: React.FC<EventDetailProps> = ({
                 </div>
               </div>
             )}
+      {
+        <div style={{ marginBottom: '20px' }}>
+          <label
+            style={{
+              display: 'block',
+              marginBottom: '6px',
+              fontSize: '0.7rem',
+              fontWeight: 600,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              color: '#94a3b8',
+            }}
+          >
+            Attach thing
+          </label>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+            <select
+              value={attachTypeDefId}
+              onChange={(e) => setAttachTypeDefId(e.target.value)}
+              disabled={loading}
+              style={{
+                flex: 1,
+                backgroundColor: '#0f172a',
+                border: '1px solid #334155',
+                borderRadius: '8px',
+                color: '#f8fafc',
+                padding: '8px 10px',
+                fontSize: '0.82rem',
+                fontFamily: 'inherit',
+              }}
+            >
+              <option value="">Choose a type</option>
+              {typeDefinitions.map((td) => (
+                <option key={td.id} value={td.id}>
+                  {td.name} ({td.fieldType})
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={attachValue}
+              onChange={(e) => setAttachValue(e.target.value)}
+              placeholder='{"hours": 7.5}'
+              disabled={loading || !attachTypeDefId}
+              style={{
+                flex: 1,
+                backgroundColor: '#0f172a',
+                border: '1px solid #334155',
+                borderRadius: '8px',
+                color: '#f8fafc',
+                padding: '8px 10px',
+                fontSize: '0.82rem',
+                fontFamily: 'inherit',
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleAttachThing}
+              disabled={loading || !attachTypeDefId || !attachValue.trim()}
+              style={{
+                backgroundColor: '#818cf8',
+                color: '#1e1b4b',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 16px',
+                fontWeight: 700,
+                fontSize: '0.72rem',
+                cursor: 'pointer',
+              }}
+            >
+              Attach
+            </button>
+          </div>
+          <p style={{ margin: '6px 0 0', color: '#94a3b8', fontSize: '0.72rem' }}>
+            Value must be valid JSON, e.g. <code style={{ color: '#818cf8' }}>hours: 7.5</code>
+          </p>
+        </div>
+      }
+
 
             <div
               style={{
