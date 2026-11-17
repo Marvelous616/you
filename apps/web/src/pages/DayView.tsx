@@ -30,7 +30,6 @@ import { SuggestionCard } from '../components/SuggestionCard';
 import { SuggestionEdit } from '../components/SuggestionEdit';
 import { EventDetail } from '../components/EventDetail';
 import { Diagnostics } from '../components/Diagnostics';
-import { Settings } from './Settings';
 
 type Theme = 'light' | 'dark';
 
@@ -430,12 +429,6 @@ export const DayView: React.FC<DayViewProps> = ({
           isOpen={suggestionEditOpen}
           onClose={() => setSuggestionEditOpen(false)}
           onSuggestionUpdated={loadData}
-        />
-
-        <Settings
-          theme={theme}
-          onThemeChange={onThemeChange}
-          onClose={() => onSettingsOpen()}
         />
       </div>
 
