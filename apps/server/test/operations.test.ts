@@ -476,6 +476,66 @@ END:VCALENDAR`;
   });
 });
 
+describe('event edit FK handling', () => {
+  let db: DatabaseSync;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    db = new DatabaseSync(':memory:');
+    app = buildApp({ db, version: 'test' });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('patches an event without an FK error when the start time moves to a new day', async () => {
+    // Seed an event on day 2026-01-15 via the active-day + create flow.
+    const dayRes = await app.inject({
+      method: 'GET',
+      url: '/api/v1/days/active?timezone=Pacific/Kiritimati',
+    });
+    expect(dayRes.statusCode).toBe(200);
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/events',
+      payload: {
+        event: {
+          id: 'e-fk-1',
+          dayId: 'day-2026-01-15',
+          title: 'Coding',
+          startAt: '2026-01-15T10:00:00.000Z',
+          endAt: '2026-01-15T11:00:00.000Z',
+          startPrecision: 'exact',
+          endPrecision: 'exact',
+          source: 'live',
+          createdAt: '2026-01-15T00:00:00.000Z',
+          updatedAt: '2026-01-15T00:00:00.000Z',
+          isDeleted: false,
+        },
+      },
+    });
+    expect(createRes.statusCode).toBe(200);
+
+    // Move start time to a date whose Day row does not exist yet, and clear end.
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/events/e-fk-1',
+      payload: {
+        startAt: '2026-02-20T23:30:00.000Z',
+        endAt: null,
+      },
+    });
+
+    expect(patchRes.statusCode).toBe(200);
+    const body = JSON.parse(patchRes.body);
+    expect(body.event.endAt).toBeUndefined();
+    expect(body.event.dayId).toBeTruthy();
+  });
+});
+
 describe('graceful shutdown', () => {
   it('closes HTTP, checkpoints the WAL, closes SQLite and exits zero', async () => {
     const calls: string[] = [];

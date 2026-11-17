@@ -1057,7 +1057,8 @@ export function buildApp(options: AppOptions): FastifyInstance {
           const day = days.find((d) => d.id === updated.dayId);
           const { dayId } = reassignDay(updated, days, day?.timezone ?? 'UTC');
           if (dayId !== updated.dayId) {
-            await eventRepo.patch(updated.id, { dayId });
+            const resolvedDayId = await ensureDay(dayId, updated.startAt);
+            await eventRepo.patch(updated.id, { dayId: resolvedDayId });
           }
         }
 
