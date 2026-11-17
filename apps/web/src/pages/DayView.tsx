@@ -23,6 +23,7 @@ import { QuickEntry } from '../components/QuickEntry';
 import { EventList } from '../components/EventList';
 import { Markers } from '../components/Markers';
 import { Journal } from '../components/Journal';
+import { SearchBox } from '../components/SearchBox';
 import { ReviewModal } from '../components/ReviewModal';
 import { ServerStatus } from '../components/ServerStatus';
 import { SuggestionCard } from '../components/SuggestionCard';
@@ -272,6 +273,13 @@ export const DayView: React.FC<DayViewProps> = ({ onSettingsOpen }) => {
 
         {!isLoading && day && (
           <>
+            <SearchBox
+              onEventClick={(eventId) => {
+                const event = events.find((e) => e.id === eventId);
+                if (event) handleEventClick(event);
+              }}
+            />
+
             <div className="card compact">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
                 <div>

@@ -8,6 +8,7 @@ import {
   JournalEntry,
   Marker,
   Person,
+  SearchHit,
   Suggestion,
   SuggestionOverrides,
   SuggestionStatus,
@@ -625,6 +626,18 @@ export async function deleteEventThing(
     res,
     'Failed delete event thing'
   );
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+export async function search(query: string, limit?: number): Promise<SearchHit[]> {
+  const searchQuery = query.trim();
+  const params = new URLSearchParams({ q: searchQuery });
+  if (limit) params.set('limit', String(limit));
+  const res = await fetch(`${API_BASE}/api/v1/search?${params.toString()}`);
+  return readJson<SearchHit[]>(res, 'Failed to search');
 }
 
 // ---------------------------------------------------------------------------
