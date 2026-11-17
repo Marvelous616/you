@@ -284,6 +284,38 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 7,
+    description: 'Increment 5: Diagnostics crash reports and perf samples with rolling retention',
+    up: (db: DatabaseSync) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS crash_reports (
+          id TEXT PRIMARY KEY,
+          error TEXT NOT NULL,
+          app_version TEXT NOT NULL,
+          device_type TEXT NOT NULL,
+          screen TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS perf_samples (
+          id TEXT PRIMARY KEY,
+          operation TEXT NOT NULL,
+          duration_ms REAL NOT NULL,
+          device_type TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          is_deleted INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_crash_reports_created_at ON crash_reports(created_at);
+        CREATE INDEX IF NOT EXISTS idx_perf_samples_created_at ON perf_samples(created_at);
+        CREATE INDEX IF NOT EXISTS idx_perf_samples_operation ON perf_samples(operation);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

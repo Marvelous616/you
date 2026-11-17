@@ -16,3 +16,4 @@ export * from './sqlite/person-alias-repository.js';
 export * from './sqlite/type-definition-repository.js';
 export * from './sqlite/event-thing-repository.js';
 export * from './sqlite/search-repository.js';
+export * from './sqlite/diagnostics-repository.js';

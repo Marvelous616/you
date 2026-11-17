@@ -7,6 +7,7 @@ import {
   SqliteSuggestionRepository,
   SqliteTemplateRepository,
   SqliteTagRepository,
+  SqliteSearchRepository,
 } from '@life-logger/persistence';
 import {
   acceptSuggestion,
@@ -313,6 +314,20 @@ async function runBenchmark(hostLabel: string): Promise<BenchmarkDocument> {
   );
   console.log(`Loaded ${loadedCount} events for timeline`);
 
+  // 14. Search over 1000 event titles/notes (Target: < 15ms)
+  const searchRepo = new SqliteSearchRepository(db);
+  const searchSamples: number[] = [];
+  const searchQuery = 'synthetic activity';
+  for (let i = 0; i < 50; i++) {
+    const sStart = performance.now();
+    await searchRepo.search(searchQuery, 50);
+    searchSamples.push(performance.now() - sStart);
+  }
+  const avgSearchMs = searchSamples.reduce((a, b) => a + b, 0) / searchSamples.length;
+  console.log(
+    `[Metric 14] Search 1000 Events (Avg): ${avgSearchMs.toFixed(3)} ms (Target: < 15 ms)`
+  );
+
   // 14. Tag rename with 500 descendants (Target: < 100ms)
   const rootTag = {
     id: 'tag-bench-root',
@@ -346,7 +361,7 @@ async function runBenchmark(hostLabel: string): Promise<BenchmarkDocument> {
   const renameMs = performance.now() - renameStart;
   const renameSampleCount = Math.max(renameChanges.length, 1);
   console.log(
-    `[Metric 14] Tag Rename 500 Descendants (Avg): ${(renameMs / renameSampleCount).toFixed(
+    `[Metric 15] Tag Rename 500 Descendants (Avg): ${(renameMs / renameSampleCount).toFixed(
       3
     )} ms (Target: < 100 ms)`
   );
@@ -384,7 +399,7 @@ async function runBenchmark(hostLabel: string): Promise<BenchmarkDocument> {
   }
   const avgTemplateLogMs = templateLogSamples.reduce((a, b) => a + b, 0) / templateLogSamples.length;
   console.log(
-    `[Metric 15] Template Log Flow (Avg): ${avgTemplateLogMs.toFixed(
+    `[Metric 16] Template Log Flow (Avg): ${avgTemplateLogMs.toFixed(
       3
     )} ms (Target: < 25 ms)`
   );
@@ -418,6 +433,7 @@ async function runBenchmark(hostLabel: string): Promise<BenchmarkDocument> {
       suggestionAcceptFlowAvgMs: avgAcceptFlowMs,
       singleEventPatchAvgMs: avgEventPatchMs,
       timelineLoad1000EventsAvgMs: avgTimelineLoadMs,
+      search1000EventsAvgMs: avgSearchMs,
       tagRename500DescendantsAvgMs: renameMs / renameSampleCount,
       templateLogFlowAvgMs: avgTemplateLogMs,
     },
@@ -435,6 +451,7 @@ async function runBenchmark(hostLabel: string): Promise<BenchmarkDocument> {
       suggestionAcceptFlow: avgAcceptFlowMs < 25,
       singleEventPatch: avgEventPatchMs < 15,
       timelineLoad1000Events: avgTimelineLoadMs < 100,
+      search1000Events: avgSearchMs < 15,
       tagRename500Descendants: renameMs / renameSampleCount < 100,
       templateLogFlow: avgTemplateLogMs < 25,
     },

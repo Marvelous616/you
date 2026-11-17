@@ -17,6 +17,8 @@ import {
   TypeDefinition,
   UUID,
   SearchHit,
+  CrashReport,
+  PerfSample,
 } from '@life-logger/domain';
 
 export interface CursorResult<T> {
@@ -206,4 +208,12 @@ export interface IEventThingRepository {
 
 export interface ISearchRepository {
   search(query: string, limit?: number): Promise<SearchHit[]>;
+}
+
+export interface IDiagnosticsRepository {
+  saveCrashReport(report: CrashReport): Promise<void>;
+  listCrashReports(includeDeleted?: boolean): Promise<CrashReport[]>;
+  savePerfSample(sample: PerfSample): Promise<void>;
+  listPerfSamples(includeDeleted?: boolean): Promise<PerfSample[]>;
+  pruneOlderThan(retentionDays: number): Promise<number>;
 }

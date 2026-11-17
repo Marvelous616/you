@@ -93,7 +93,7 @@ describe('Migration 3 and Increment 3 repositories', () => {
     const versions = db
       .prepare('SELECT version FROM schema_migrations ORDER BY version')
       .all() as Array<{ version: number }>;
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
@@ -137,7 +137,7 @@ describe('Migration 3 and Increment 3 repositories', () => {
     const versions = legacy
       .prepare('SELECT version FROM schema_migrations ORDER BY version')
       .all() as Array<{ version: number }>;
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect((await new SqliteEventRepository(legacy).findById('e-1'))?.title).toBe(
       'Imported planning'
     );

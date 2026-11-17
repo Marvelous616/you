@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-11-16T19:25:34.552Z",
+  "timestamp": "2026-11-17T15:29:21.300Z",
   "environment": {
-    "hostLabel": "Dainsleif",
+    "hostLabel": "pc",
     "nodeVersion": "v24.22.2",
     "platform": "linux",
     "arch": "x64",
@@ -11,24 +11,25 @@
     "appVersion": "0.3.6"
   },
   "metrics": {
-    "singleMarkerSaveAvgMs": 0.019089900000000312,
-    "singleMarkerSaveP95Ms": 0.025778999999999996,
-    "batchIngest5000RecordsMs": 93.77946699999998,
-    "dayTimelineQueryAvgMs": 0.05440418000000306,
-    "quickEntryParseAvgMs": 0.007592190500000101,
-    "quickEntryParseP95Ms": 0.009774999999990541,
-    "singleEventSaveAvgMs": 0.02611161999999922,
-    "timelineLanes50EventsAvgMs": 0.050473630000000894,
-    "timelineLanes50EventsP95Ms": 0.06511599999998907,
-    "icsParse200EventsAvgMs": 0.8322580799999997,
-    "calendarSuggestionBuild200EventsAvgMs": 0.35667387999999844,
-    "singleSuggestionSaveAvgMs": 0.02500155499999991,
-    "pendingSuggestionQueryAvgMs": 0.5463372199999986,
-    "suggestionAcceptFlowAvgMs": 0.06042709999999261,
-    "singleEventPatchAvgMs": 0.05047134999999514,
-    "timelineLoad1000EventsAvgMs": 2.6320835500000017,
-    "tagRename500DescendantsAvgMs": 5.470499000000018,
-    "templateLogFlowAvgMs": 0.03818979999999783
+    "singleMarkerSaveAvgMs": 0.018833819999999973,
+    "singleMarkerSaveP95Ms": 0.027701999999997895,
+    "batchIngest5000RecordsMs": 81.01450600000001,
+    "dayTimelineQueryAvgMs": 0.045577439999999,
+    "quickEntryParseAvgMs": 0.00936267350000017,
+    "quickEntryParseP95Ms": 0.007199000000014166,
+    "singleEventSaveAvgMs": 0.024301399999999376,
+    "timelineLanes50EventsAvgMs": 0.04642437499999886,
+    "timelineLanes50EventsP95Ms": 0.07799099999999726,
+    "icsParse200EventsAvgMs": 0.7676333599999987,
+    "calendarSuggestionBuild200EventsAvgMs": 0.307229539999999,
+    "singleSuggestionSaveAvgMs": 0.0171965550000003,
+    "pendingSuggestionQueryAvgMs": 0.4757891200000012,
+    "suggestionAcceptFlowAvgMs": 0.05155277999999783,
+    "singleEventPatchAvgMs": 0.042562999999998394,
+    "timelineLoad1000EventsAvgMs": 2.2783428000000043,
+    "search1000EventsAvgMs": 0.9711564999999939,
+    "tagRename500DescendantsAvgMs": 7.075493999999992,
+    "templateLogFlowAvgMs": 0.034271850000004635
   },
   "passedTargets": {
     "singleMarkerSave": true,
@@ -44,6 +45,7 @@
     "suggestionAcceptFlow": true,
     "singleEventPatch": true,
     "timelineLoad1000Events": true,
+    "search1000Events": true,
     "tagRename500Descendants": true,
     "templateLogFlow": true
   }

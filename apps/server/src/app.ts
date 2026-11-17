@@ -21,6 +21,7 @@ import {
   SqliteTemplateTagRepository,
   SqliteTypeDefinitionRepository,
   SqliteSearchRepository,
+  SqliteDiagnosticsRepository,
   ICalendarItemRepository,
   ICaptureRepository,
   IDayRepository,
@@ -36,6 +37,7 @@ import {
   ITemplateTagRepository,
   ITypeDefinitionRepository,
   ISearchRepository,
+  IDiagnosticsRepository,
   runMigrations,
 } from '@life-logger/persistence';
 import {
@@ -63,6 +65,8 @@ import {
   Tag,
   Template,
   TypeDefinition,
+  CrashReport,
+  PerfSample,
   acceptSuggestion,
   applyEventPatch,
   buildEventFromSuggestion,
@@ -273,6 +277,7 @@ export function buildApp(options: AppOptions): FastifyInstance {
   const typeDefinitionRepo: ITypeDefinitionRepository = new SqliteTypeDefinitionRepository(db);
   const eventThingRepo: IEventThingRepository = new SqliteEventThingRepository(db);
   const searchRepo: ISearchRepository = new SqliteSearchRepository(db);
+  const diagnosticsRepo: IDiagnosticsRepository = new SqliteDiagnosticsRepository(db);
   const extensionRegistry = createDefaultExtensionRegistry();
 
   const server = Fastify({ logger: options.logger ?? false });
@@ -354,6 +359,72 @@ export function buildApp(options: AppOptions): FastifyInstance {
     const hits = await searchRepo.search(query, limit);
     return { query: normalizeSearchQuery(query), hits };
   });
+
+  // ---------------------------------------------------------------------------
+  // Diagnostics: crash reports and perf samples (system data only, never synced)
+  // ---------------------------------------------------------------------------
+
+  server.post<{ Body: CrashReport }>('/api/v1/diagnostics/crash-reports', async (request, reply) => {
+    const report = request.body;
+    if (!report || typeof report.error !== 'string' || !report.appVersion || !report.deviceType) {
+      reply.code(400).send({ error: 'error, appVersion and deviceType are required' });
+      return;
+    }
+    try {
+      await diagnosticsRepo.saveCrashReport(report);
+      reply.code(201).send({ id: report.id });
+    } catch (err) {
+      reply.code(500).send({ error: String(err) });
+    }
+  });
+
+  server.post<{ Body: PerfSample }>('/api/v1/diagnostics/perf-samples', async (request, reply) => {
+    const sample = request.body;
+    if (!sample || typeof sample.operation !== 'string' || typeof sample.durationMs !== 'number' || !sample.deviceType) {
+      reply.code(400).send({ error: 'operation, durationMs and deviceType are required' });
+      return;
+    }
+    try {
+      await diagnosticsRepo.savePerfSample(sample);
+      reply.code(201).send({ id: sample.id });
+    } catch (err) {
+      reply.code(500).send({ error: String(err) });
+    }
+  });
+
+  server.get<{ Querystring: { includeDeleted?: string } }>(
+    '/api/v1/diagnostics/crash-reports',
+    async (request) => {
+      return diagnosticsRepo.listCrashReports(request.query.includeDeleted === 'true');
+    }
+  );
+
+  server.get<{ Querystring: { includeDeleted?: string } }>(
+    '/api/v1/diagnostics/perf-samples',
+    async (request) => {
+      return diagnosticsRepo.listPerfSamples(request.query.includeDeleted === 'true');
+    }
+  );
+
+  server.post<{ Querystring: { retentionDays?: string } }>(
+    '/api/v1/diagnostics/prune',
+    async (request, reply) => {
+      const retentionDays = request.query.retentionDays
+        ? parseInt(request.query.retentionDays, 10)
+        : 30;
+      if (!Number.isFinite(retentionDays) || retentionDays < 1) {
+        reply.code(400).send({ error: 'retentionDays must be a positive integer' });
+        return;
+      }
+      try {
+        const pruned = await diagnosticsRepo.pruneOlderThan(retentionDays);
+        return { pruned, retentionDays };
+      } catch (err) {
+        reply.code(500).send({ error: String(err) });
+        return;
+      }
+    }
+  );
 
   // ---------------------------------------------------------------------------
   // Sync push / pull

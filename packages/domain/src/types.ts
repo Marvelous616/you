@@ -216,6 +216,32 @@ export interface EventThing extends EntityMetadata {
 }
 
 /**
+ * A crash report captured from the client. It holds system data only — never
+ * the text of events, journal entries or people.
+ */
+export interface CrashReport extends EntityMetadata {
+  /** Error message (and optionally a stack trace, redacted). */
+  error: string;
+  appVersion: string;
+  /** e.g. "web" | "android". */
+  deviceType: string;
+  /** The screen or route where the crash occurred, if known. */
+  screen?: string;
+}
+
+/**
+ * An occasional timing sample, not every action. Used to feed diagnostics and
+ * compare against benchmark baselines.
+ */
+export interface PerfSample extends EntityMetadata {
+  /** e.g. "open-today", "save-marker", "sync-batch". */
+  operation: string;
+  durationMs: number;
+  /** e.g. "web" | "android". */
+  deviceType: string;
+}
+
+/**
  * Generic state-of-mind / context sample. Dimensions are strings so new
  * dimensions require no schema migration.
  */

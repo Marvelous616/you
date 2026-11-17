@@ -41,7 +41,7 @@ describe('server operations endpoints', () => {
     expect(body.status).toBe('ok');
     expect(body.database).toBe('connected');
     expect(body.version).toBe('v0.3.5-increment-3.5');
-    expect(body.schemaVersion).toBe(6);
+    expect(body.schemaVersion).toBe(7);
     expect(body.syncProtocolVersion).toBe(SYNC_PROTOCOL_VERSION);
     expect(body.timestamp).toEqual(expect.any(String));
   });

@@ -26,7 +26,7 @@ describe('Migration 5: unique alias across all people', () => {
     const versions = db
       .prepare('SELECT version FROM schema_migrations ORDER BY version')
       .all() as Array<{ version: number }>;
-    expect(versions.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(versions.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     db.close();
   });
 
@@ -63,7 +63,7 @@ describe('Migration 5: unique alias across all people', () => {
     const versions = db
       .prepare('SELECT version FROM schema_migrations ORDER BY version')
       .all() as Array<{ version: number }>;
-    expect(versions.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(versions.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     db.close();
   });
 

@@ -15,6 +15,22 @@ Incremental, task-level entries. Format: date, increment, task, change, gate sta
 - Commits: `d5f3894` (stage 1), `9caf420` (stage 2), `644747e` (stage 3), `06a34b0` (stage 4).
 - Gates: typecheck, lint, tests (209), build green.
 
+### T2 — Full-text search (2026-11-17)
+
+- Added domain search module: `SearchHit`, `normalizeSearchQuery`, `rankSearchHit`.
+- Added `SqliteSearchRepository`: SQLite `LIKE` over event titles/notes and
+  journal bodies, ranked title-prefix > title-contains > body match, newest
+  first.
+- Added `ISearchRepository` to the persistence interface.
+- Added `GET /api/v1/search?q=&limit=` returning `{ query, hits }`.
+- Benchmark: added `search1000EventsAvgMs` target (< 15ms); new baseline
+  `docs/benchmarks/increment-5-server-baseline.json`; all targets pass, no
+  regression vs increment-4.1 baseline.
+- Web: `search()` API client, `SearchBox` component wired into DayView above
+  today's timeline; selecting an event opens its detail.
+- Commits: `0cb57c3` (backend), `8291ff2` (web UI).
+- Gates: typecheck, lint, tests (212), build green.
+
 ## Increment 4.1 — Completion and Hardening
 
 ### T1 — Alias uniqueness (2026-11-17)
