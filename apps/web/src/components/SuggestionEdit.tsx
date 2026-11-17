@@ -7,7 +7,7 @@ import {
 } from '../api.js';
 
 interface SuggestionEditProps {
-  suggestion: Suggestion;
+  suggestion?: Suggestion;
   isOpen: boolean;
   onClose: () => void;
   onSuggestionUpdated: () => void;
@@ -21,14 +21,26 @@ export const SuggestionEdit: React.FC<SuggestionEditProps> = ({
 }) => {
   const [editing, setEditing] = useState(false);
   const [overrides, setOverrides] = useState<SuggestionOverrides>({
-    title: suggestion.proposed.title,
-    startAt: suggestion.proposed.startAt,
-    endAt: suggestion.proposed.endAt ?? undefined,
+    title: suggestion?.proposed.title ?? '',
+    startAt: suggestion?.proposed.startAt ?? '',
+    endAt: suggestion?.proposed.endAt ?? undefined,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Re-seed the form whenever the target suggestion changes.
+  React.useEffect(() => {
+    if (suggestion) {
+      setOverrides({
+        title: suggestion.proposed.title,
+        startAt: suggestion.proposed.startAt,
+        endAt: suggestion.proposed.endAt ?? undefined,
+      });
+    }
+  }, [suggestion?.id]);
+
   const handleEdit = async () => {
+    if (!suggestion) return;
     setLoading(true);
     setError(null);
     try {
@@ -43,6 +55,7 @@ export const SuggestionEdit: React.FC<SuggestionEditProps> = ({
   };
 
   const handleAccept = async () => {
+    if (!suggestion) return;
     setLoading(true);
     setError(null);
     try {
@@ -57,6 +70,7 @@ export const SuggestionEdit: React.FC<SuggestionEditProps> = ({
   };
 
   const handleReject = async () => {
+    if (!suggestion) return;
     setLoading(true);
     setError(null);
     try {
@@ -70,7 +84,7 @@ export const SuggestionEdit: React.FC<SuggestionEditProps> = ({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !suggestion) return null;
 
   return (
     <div
