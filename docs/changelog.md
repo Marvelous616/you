@@ -31,6 +31,17 @@ Incremental, task-level entries. Format: date, increment, task, change, gate sta
 - Commits: `0cb57c3` (backend), `8291ff2` (web UI).
 - Gates: typecheck, lint, tests (212), build green.
 
+### T3 — Diagnostics (2026-11-17)
+
+- Add `CrashReport` and `PerfSample` domain entities (system data only, never life content).
+- Migration 7: `crash_reports` and `perf_samples` tables with `created_at` indexes for retention.
+- `SqliteDiagnosticsRepository`: save/list crash reports & perf samples, `pruneOlderThan(retentionDays)` rolling retention job (default 30 days).
+- Server API: `POST /api/v1/diagnostics/crash-reports`, `POST /api/v1/diagnostics/perf-samples`, `GET` both lists, `POST /api/v1/diagnostics/prune?retentionDays=`.
+- Diagnostics is intentionally not synced (stays on device/server).
+- Web: diagnostics API client, Diagnostics modal with crash/perf lists, sample actions, prune button; wired into DayView header.
+- Commits: `fa8cff7` (backend), `e8042ee` (web UI).
+- Gates: typecheck, lint, tests (218), build green.
+
 ## Increment 4.1 — Completion and Hardening
 
 ### T1 — Alias uniqueness (2026-11-17)
