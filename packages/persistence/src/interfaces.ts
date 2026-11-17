@@ -185,11 +185,20 @@ export interface ICalendarItemRepository {
 export interface ITypeDefinitionRepository {
   save(typeDefinition: TypeDefinition): Promise<void>;
   findById(id: UUID): Promise<TypeDefinition | null>;
+  findByName(name: string): Promise<TypeDefinition | null>;
   listAll(includeDeleted?: boolean): Promise<TypeDefinition[]>;
+  listModifiedSince(cursor: string, limit?: number): Promise<CursorResult<TypeDefinition>>;
+  create(typeDefinition: TypeDefinition): Promise<TypeDefinition>;
+  patch(id: UUID, patch: Partial<TypeDefinition>): Promise<TypeDefinition>;
+  softDelete(id: UUID): Promise<void>;
 }
 
 export interface IEventThingRepository {
   save(thing: EventThing): Promise<void>;
+  findById(id: UUID): Promise<EventThing | null>;
   findByEventId(eventId: UUID): Promise<EventThing | null>;
+  findByEventAndType(eventId: UUID, typeDefinitionId: UUID): Promise<EventThing | null>;
   listAll(includeDeleted?: boolean): Promise<EventThing[]>;
+  listModifiedSince(cursor: string, limit?: number): Promise<CursorResult<EventThing>>;
+  softDelete(id: UUID): Promise<void>;
 }

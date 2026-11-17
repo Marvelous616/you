@@ -279,6 +279,8 @@ export const MIGRATIONS: Migration[] = [
 
         CREATE INDEX IF NOT EXISTS idx_event_things_event ON event_things(event_id);
         CREATE INDEX IF NOT EXISTS idx_event_things_type ON event_things(type_definition_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_event_things_event_type_live
+          ON event_things(event_id, type_definition_id) WHERE is_deleted = 0;
       `);
     },
   },

@@ -10,6 +10,7 @@ import {
   SqliteCaptureRepository,
   SqliteDayRepository,
   SqliteEventRepository,
+  SqliteEventThingRepository,
   SqliteJournalRepository,
   SqliteMarkerRepository,
   SqlitePersonAliasRepository,
@@ -18,10 +19,12 @@ import {
   SqliteTagRepository,
   SqliteTemplateRepository,
   SqliteTemplateTagRepository,
+  SqliteTypeDefinitionRepository,
   ICalendarItemRepository,
   ICaptureRepository,
   IDayRepository,
   IEventRepository,
+  IEventThingRepository,
   IJournalRepository,
   IMarkerRepository,
   IPersonAliasRepository,
@@ -30,6 +33,7 @@ import {
   ITagRepository,
   ITemplateRepository,
   ITemplateTagRepository,
+  ITypeDefinitionRepository,
   runMigrations,
 } from '@life-logger/persistence';
 import {
@@ -47,6 +51,7 @@ import {
   Event,
   EventParticipant,
   EventTag,
+  EventThing,
   JournalEntry,
   Marker,
   Person,
@@ -55,6 +60,7 @@ import {
   SuggestionStatus,
   Tag,
   Template,
+  TypeDefinition,
   acceptSuggestion,
   applyEventPatch,
   buildEventFromSuggestion,
@@ -200,6 +206,23 @@ interface LogTemplateBody {
   startAt?: string;
 }
 
+interface CreateTypeDefinitionBody {
+  name: string;
+  fieldType: string;
+  schema?: Record<string, unknown>;
+}
+
+interface PatchTypeDefinitionBody {
+  name?: string;
+  fieldType?: string;
+  schema?: Record<string, unknown> | null;
+}
+
+interface AttachEventThingBody {
+  typeDefinitionId: string;
+  value?: Record<string, unknown>;
+}
+
 function normalizeRecord<T extends object>(record: SyncRecordPayload, forceId?: string): T {
   const data = record.data;
   if (!data || typeof data !== 'object') {
@@ -244,6 +267,8 @@ export function buildApp(options: AppOptions): FastifyInstance {
   const calendarItemRepo: ICalendarItemRepository = new SqliteCalendarItemRepository(db);
   const templateRepo: ITemplateRepository = new SqliteTemplateRepository(db);
   const templateTagRepo: ITemplateTagRepository = new SqliteTemplateTagRepository(db);
+  const typeDefinitionRepo: ITypeDefinitionRepository = new SqliteTypeDefinitionRepository(db);
+  const eventThingRepo: IEventThingRepository = new SqliteEventThingRepository(db);
   const extensionRegistry = createDefaultExtensionRegistry();
 
   const server = Fastify({ logger: options.logger ?? false });
@@ -397,6 +422,16 @@ export function buildApp(options: AppOptions): FastifyInstance {
               }
               break;
             }
+            case 'type_definition': {
+              const typeDefinition = normalizeRecord<TypeDefinition>(record);
+              await typeDefinitionRepo.save(typeDefinition);
+              break;
+            }
+            case 'event_thing': {
+              const thing = normalizeRecord<EventThing>(record);
+              await eventThingRepo.save(thing);
+              break;
+            }
             case 'suggestion': {
               const suggestion = normalizeRecord<Suggestion>(record);
               if (
@@ -477,6 +512,8 @@ export function buildApp(options: AppOptions): FastifyInstance {
         eventTagDelta,
         participantDelta,
         suggestionDelta,
+        typeDefinitionDelta,
+        eventThingDelta,
       ] = await Promise.all([
         markerRepo.listModifiedSince(cursor, limit),
         dayRepo.listModifiedSince(cursor, limit),
@@ -496,6 +533,8 @@ export function buildApp(options: AppOptions): FastifyInstance {
         tagRepo.listEventTagsModifiedSince(cursor, limit),
         personRepo.listParticipantsModifiedSince(cursor, limit),
         suggestionRepo.listModifiedSince(cursor, limit),
+        typeDefinitionRepo.listModifiedSince(cursor, limit),
+        eventThingRepo.listModifiedSince(cursor, limit),
       ]);
 
       const records: SyncRecordPayload[] = [
@@ -522,6 +561,10 @@ export function buildApp(options: AppOptions): FastifyInstance {
         ...suggestionDelta.records.map((suggestion) =>
           toRecord('suggestion', suggestion.id, suggestion)
         ),
+        ...typeDefinitionDelta.records.map((typeDefinition) =>
+          toRecord('type_definition', typeDefinition.id, typeDefinition)
+        ),
+        ...eventThingDelta.records.map((thing) => toRecord('event_thing', thing.id, thing)),
       ];
 
       records.sort(
@@ -1477,6 +1520,140 @@ export function buildApp(options: AppOptions): FastifyInstance {
         reply.code(400).send({ error: String(err) });
         return;
       }
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // Things: typed dynamic fields (type definitions and event things)
+  // ---------------------------------------------------------------------------
+
+  server.get('/api/v1/type-definitions', async () => {
+    return typeDefinitionRepo.listAll();
+  });
+
+  server.post<{ Body: CreateTypeDefinitionBody }>('/api/v1/type-definitions', async (request, reply) => {
+    const body = request.body;
+    if (!body?.name || !body?.fieldType) {
+      reply.code(400).send({ error: 'name and fieldType are required' });
+      return;
+    }
+
+    const existing = await typeDefinitionRepo.findByName(body.name);
+    if (existing) {
+      reply.code(409).send({ error: `Type definition already exists: ${body.name}` });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const typeDefinition: TypeDefinition = {
+      id: `type-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: body.name,
+      fieldType: body.fieldType,
+      schema: body.schema,
+      createdAt: now,
+      updatedAt: now,
+      isDeleted: false,
+    };
+
+    try {
+      await typeDefinitionRepo.save(typeDefinition);
+    } catch (err) {
+      reply.code(500).send({ error: String(err) });
+      return;
+    }
+
+    return typeDefinition;
+  });
+
+  server.patch<{ Params: { id: string }; Body: PatchTypeDefinitionBody }>(
+    '/api/v1/type-definitions/:id',
+    async (request, reply) => {
+      const existing = await typeDefinitionRepo.findById(request.params.id);
+      if (!existing) {
+        reply.code(404).send({ error: 'TypeDefinition not found' });
+        return;
+      }
+
+      try {
+        const patch: Partial<TypeDefinition> = {
+          ...(request.body?.name !== undefined ? { name: request.body.name } : {}),
+          ...(request.body?.fieldType !== undefined ? { fieldType: request.body.fieldType } : {}),
+        };
+        if (request.body?.schema !== undefined) {
+          patch.schema = request.body.schema ?? undefined;
+        }
+        const updated = await typeDefinitionRepo.patch(request.params.id, patch);
+        return updated;
+      } catch (err) {
+        reply.code(400).send({ error: String(err) });
+        return;
+      }
+    }
+  );
+
+  server.delete<{ Params: { id: string } }>(
+    '/api/v1/type-definitions/:id',
+    async (request, reply) => {
+      const existing = await typeDefinitionRepo.findById(request.params.id);
+      if (!existing) {
+        reply.code(404).send({ error: 'TypeDefinition not found' });
+        return;
+      }
+
+      await typeDefinitionRepo.softDelete(request.params.id);
+      return { id: request.params.id, isDeleted: true };
+    }
+  );
+
+  server.post<{ Params: { eventId: string }; Body: AttachEventThingBody }>(
+    '/api/v1/events/:eventId/things',
+    async (request, reply) => {
+      const event = await eventRepo.findById(request.params.eventId);
+      if (!event) {
+        reply.code(404).send({ error: 'Event not found' });
+        return;
+      }
+
+      const typeDefinition = await typeDefinitionRepo.findById(request.body?.typeDefinitionId);
+      if (!typeDefinition) {
+        reply.code(400).send({ error: `TypeDefinition not found: ${request.body?.typeDefinitionId}` });
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const existing = await eventThingRepo.findByEventAndType(
+        request.params.eventId,
+        typeDefinition.id
+      );
+      const thing: EventThing = {
+        id: existing?.id ?? `thing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        eventId: request.params.eventId,
+        typeDefinitionId: typeDefinition.id,
+        value: request.body?.value ?? {},
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        isDeleted: false,
+      };
+
+      await eventThingRepo.save(thing);
+      return thing;
+    }
+  );
+
+  server.delete<{ Params: { eventId: string; typeDefinitionId: string } }>(
+    '/api/v1/events/:eventId/things/:typeDefinitionId',
+    async (request, reply) => {
+      const existing = await eventThingRepo.findByEventAndType(
+        request.params.eventId,
+        request.params.typeDefinitionId
+      );
+      if (!existing) {
+        reply.code(404).send({ error: 'Event thing not found' });
+        return;
+      }
+
+      await eventThingRepo.softDelete(existing.id);
+      return { id: existing.id, eventId: request.params.eventId, isDeleted: true };
     }
   );
 
