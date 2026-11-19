@@ -1,6 +1,6 @@
 [Unit]
-Description=Life Logger
-Documentation=file:/opt/lifelogger/current/deploy/README.md
+Description=Life Logger server
+Documentation=https://github.com/Marvelous616/you
 After=network-online.target
 Wants=network-online.target
 
@@ -8,10 +8,9 @@ Wants=network-online.target
 Type=simple
 User=lifelogger
 Group=lifelogger
-WorkingDirectory=/opt/lifelogger/current
+WorkingDirectory=/usr/lib/lifelogger
 EnvironmentFile=/etc/lifelogger.env
-EnvironmentFile=-/opt/lifelogger/version.env
-ExecStart=/usr/bin/node apps/server/dist/index.js
+ExecStart=/usr/bin/lifelogger
 Restart=always
 RestartSec=2
 TimeoutStopSec=20

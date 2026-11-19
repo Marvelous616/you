@@ -1,0 +1,37 @@
+post_install() {
+  # Arch's libalpm hooks normally do both; repeat here so a manual install
+  # without hooks still gets the service account and data directories.
+  systemd-sysusers /usr/lib/sysusers.d/lifelogger.conf >/dev/null 2>&1 || true
+  systemd-tmpfiles --create /usr/lib/tmpfiles.d/lifelogger.conf >/dev/null 2>&1 || true
+
+  cat <<'EOF'
+
+Life Logger installed.
+
+  1. Set API_KEY in /etc/lifelogger.env (this file is preserved on upgrades).
+  2. Start the service and the daily backup timer:
+       systemctl enable --now lifelogger.service lifelogger-backup.timer
+  3. Check: curl -fsS http://127.0.0.1:8080/health
+
+To install or upgrade from a GitHub release instead, use:
+  lifelogger-update <version>
+
+EOF
+}
+
+post_upgrade() {
+  systemd-tmpfiles --create /usr/lib/tmpfiles.d/lifelogger.conf >/dev/null 2>&1 || true
+
+  cat <<'EOF'
+
+Life Logger upgraded. Restart the service to load the new bundle:
+  systemctl restart lifelogger.service
+curl -fsS http://127.0.0.1:8080/health
+
+EOF
+}
+
+pre_remove() {
+  echo "Life Logger is being removed. /var/lib/lifelogger and"
+  echo "/etc/lifelogger.env are not owned by the package and will be kept."
+}

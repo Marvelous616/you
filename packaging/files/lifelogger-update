@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+#
+# Install a Life Logger release from GitHub with a health check and rollback.
+#
+# The package itself is built on the development PC and attached to the GitHub
+# release as an asset. This helper only downloads, verifies and installs it.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: lifelogger-update <version> [--pkgrel N] [--health-url URL] [--dry-run]
+
+  <version>     Release version without the leading v, for example 0.3.5.
+  --pkgrel N    Package release number (default 1).
+  --health-url  Override the health check URL. Useful for a rollback drill.
+  --dry-run     Print the plan and downloaded asset name without installing.
+
+Environment overrides:
+  LIFELOGGER_RELEASE_BASE  Base URL for release assets, for a mirror or drill.
+  CACHE_DIR                Where packages and the current-package marker live.
+  SYSTEMCTL / PACMAN       Optional binary overrides for testing.
+EOF
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Run this script as root." >&2
+  exit 1
+fi
+
+for tool in curl sha256sum pacman systemctl; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "Missing required command: $tool" >&2
+    exit 1
+  }
+done
+
+VERSION=""
+PKGREL="1"
+HEALTH_URL=""
+DRY_RUN=0
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --pkgrel)
+      PKGREL="${2:-}"
+      shift 2
+      ;;
+    --health-url)
+      HEALTH_URL="${2:-}"
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      if [ -n "$VERSION" ]; then
+        echo "Only one version may be given" >&2
+        exit 2
+      fi
+      VERSION="$1"
+      shift
+      ;;
+  esac
+done
+
+if [ -z "$VERSION" ]; then
+  usage >&2
+  exit 2
+fi
+
+if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  echo "Invalid version: $VERSION (expected x.y.z)" >&2
+  exit 2
+fi
+
+if ! printf '%s' "$PKGREL" | grep -Eq '^[0-9]+$'; then
+  echo "Invalid pkgrel: $PKGREL" >&2
+  exit 2
+fi
+
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64 | aarch64) ;;
+  *)
+    echo "Unsupported architecture: $ARCH" >&2
+    exit 2
+    ;;
+esac
+
+PKG="lifelogger-${VERSION}-${PKGREL}-${ARCH}.pkg.tar.zst"
+BASE="${LIFELOGGER_RELEASE_BASE:-https://github.com/Marvelous616/you/releases/download/v${VERSION}}"
+CACHE_DIR="${CACHE_DIR:-/var/cache/lifelogger}"
+SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+PACMAN="${PACMAN:-pacman}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/health}"
+HEALTH_ATTEMPTS="${HEALTH_ATTEMPTS:-15}"
+HEALTH_DELAY="${HEALTH_DELAY:-2}"
+MARKER="$CACHE_DIR/current"
+
+echo "Release:  v${VERSION} (pkgrel ${PKGREL}, ${ARCH})"
+echo "Asset:    ${BASE}/${PKG}"
+echo "Health:   ${HEALTH_URL}"
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "Dry run: nothing downloaded or installed."
+  exit 0
+fi
+
+mkdir -p "$CACHE_DIR"
+
+echo "Downloading package and checksum"
+curl -fsSL --retry 3 -o "$CACHE_DIR/$PKG" "$BASE/$PKG"
+curl -fsSL --retry 3 -o "$CACHE_DIR/$PKG.sha256" "$BASE/$PKG.sha256"
+
+(
+  cd "$CACHE_DIR"
+  sha256sum -c --status "$PKG.sha256"
+) || {
+  echo "Checksum verification failed for $PKG" >&2
+  exit 4
+}
+echo "Checksum verified"
+
+PREVIOUS=""
+if [ -r "$MARKER" ]; then
+  PREVIOUS="$(cat "$MARKER")"
+  if [ -n "$PREVIOUS" ] && [ ! -f "$CACHE_DIR/$PREVIOUS" ]; then
+    echo "Previous package $PREVIOUS is missing; rollback will not be possible." >&2
+    PREVIOUS=""
+  fi
+fi
+
+if [ -f /usr/lib/lifelogger/backup.sh ]; then
+  echo "Taking a pre-update database backup"
+  /usr/lib/lifelogger/backup.sh
+fi
+
+health_ok() {
+  local body
+  body="$(curl -fsS --max-time 5 "$HEALTH_URL" 2>/dev/null)" || return 1
+  case "$body" in
+    *'"status":"ok"'*) ;;
+    *) return 1 ;;
+  esac
+  case "$body" in
+    *"\"version\":\"$VERSION\""*) return 0 ;;
+    *)
+      echo "Health check reported a different version: $body" >&2
+      return 1
+      ;;
+  esac
+}
+
+wait_for_health() {
+  for _attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
+    if health_ok; then
+      return 0
+    fi
+    sleep "$HEALTH_DELAY"
+  done
+  return 1
+}
+
+echo "Installing $PKG"
+"$PACMAN" -U --noconfirm "$CACHE_DIR/$PKG"
+
+echo "Ensuring units are enabled"
+"$SYSTEMCTL" enable lifelogger.service lifelogger-backup.timer
+"$SYSTEMCTL" restart lifelogger.service
+
+if wait_for_health; then
+  printf '%s\n' "$PKG" >"$MARKER"
+  find "$CACHE_DIR" -maxdepth 1 -type f -name 'lifelogger-*.pkg.tar.zst' \
+    ! -name "$PKG" ! -name "$PREVIOUS" -print -delete
+  echo "Upgrade complete: v$VERSION is healthy"
+  exit 0
+fi
+
+echo "Health check failed after installing v$VERSION" >&2
+if [ -n "$PREVIOUS" ]; then
+  echo "Rolling back to $PREVIOUS" >&2
+  if "$PACMAN" -U --noconfirm "$CACHE_DIR/$PREVIOUS" &&
+    "$SYSTEMCTL" restart lifelogger.service &&
+    "$SYSTEMCTL" is-active --quiet lifelogger.service; then
+    printf '%s\n' "$PREVIOUS" >"$MARKER"
+    echo "Rolled back to $PREVIOUS. Inspect: journalctl -u lifelogger -n 100" >&2
+  else
+    echo "Automatic rollback failed. Install manually:" >&2
+    echo "  pacman -U --noconfirm $CACHE_DIR/$PREVIOUS" >&2
+    echo "  systemctl restart lifelogger.service" >&2
+  fi
+else
+  echo "No previous package to roll back to." >&2
+fi
+exit 1

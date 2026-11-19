@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Daily consistent SQLite backup. Exits non-zero if the copy cannot be made or
-# fails PRAGMA integrity_check. Keeps the last $RETENTION_DAYS days.
+# Consistent SQLite backup for the packaged Life Logger service.
+# Exits non-zero if the copy fails or PRAGMA integrity_check is not ok.
 set -euo pipefail
 
-DB_PATH="${DB_PATH:-/var/lib/lifelogger/life.db}"
+DB_PATH="${DB_PATH:-/var/lib/lifelogger/life-logger.sqlite}"
 BACKUP_DIR="${BACKUP_DIR:-/var/lib/lifelogger/backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 SQLITE3="${SQLITE3:-sqlite3}"

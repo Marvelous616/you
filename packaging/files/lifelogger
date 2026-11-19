@@ -1,0 +1,22 @@
+#!/bin/sh
+# Launch the packaged Life Logger server.
+#
+# APP_VERSION is set from the package's own version file rather than from
+# /etc/lifelogger.env, so /health and the web footer always report the version
+# that pacman actually installed, including after an upgrade or downgrade.
+set -eu
+
+VERSION_FILE=/usr/lib/lifelogger/version
+SERVER_JS=/usr/lib/lifelogger/server.js
+
+if [ ! -r "$SERVER_JS" ]; then
+  echo "Life Logger bundle is missing: $SERVER_JS" >&2
+  exit 1
+fi
+
+if [ -r "$VERSION_FILE" ]; then
+  APP_VERSION="$(cat "$VERSION_FILE")"
+  export APP_VERSION
+fi
+
+exec /usr/bin/node "$SERVER_JS" "$@"

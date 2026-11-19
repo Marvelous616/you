@@ -1,0 +1,2 @@
+d /var/lib/lifelogger 0750 lifelogger lifelogger -
+d /var/lib/lifelogger/backups 0750 lifelogger lifelogger -

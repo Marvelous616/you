@@ -36,14 +36,17 @@ npm run --workspace=@life-logger/web build
 # Android type check
 npm run --workspace=@life-logger/android typecheck
 
-# Deployment scripts (uses Git Bash on Windows)
+# Package metadata and archive layout (vitest)
+npx vitest run packaging/test/package.test.ts
+
+# Packaged shell scripts (uses Git Bash on Windows)
 npm run test:deploy
 
-# Lint the deployment scripts (shellcheck must be on PATH)
-shellcheck deploy/*.sh deploy/post-receive deploy/test/*.sh
+# Lint the packaged shell scripts (shellcheck must be on PATH)
+npm run shellcheck
 ```
 
-The server tests cover `/health` (ok and database failure), environment parsing, static web serving, API-key protection and graceful shutdown. The deploy test uses stubs for `systemctl`, `curl`, `sqlite3`, `git`, `npm`, `flock`, `ln` and `readlink`; it proves that a successful deploy moves the `current` pointer, that a failed health check rolls back, and that invalid tags are refused.
+The server tests cover `/health` (ok and database failure), environment parsing, static web serving, API-key protection and graceful shutdown. The package tests build a package with `--no-build`, parse the archive and check `.PKGINFO`, `.MTREE`, file modes and the installed payload. The shell tests use stubs for `curl`, `sqlite3`, `pacman`, `systemctl` and `chown`; they check root and `--yes` gates, checksum rejection and dry-run behaviour.
 
 ## Build
 
@@ -84,7 +87,7 @@ Android companion:
 npm run --workspace=@life-logger/android start
 ```
 
-Set the server address in the app's connection settings. `http://10.0.2.2:4000` is the Android emulator alias for the development PC; a real phone needs the server's LAN or Tailscale name. See `deploy/README.md` for the HTTPS versus cleartext decision.
+Set the server address in the app's connection settings. `http://10.0.2.2:4000` is the Android emulator alias for the development PC; a real phone needs the server's Tailscale name. See `packaging/README.md` for the HTTPS decision.
 
 ## Configuration
 
@@ -107,7 +110,7 @@ The server reads every setting from the environment. `.env.example` documents th
 {
   "status": "ok",
   "database": "connected",
-  "version": "v0.3.5-increment-3.5",
+  "version": "0.3.5",
   "schemaVersion": 3,
   "syncProtocolVersion": 1,
   "timestamp": "2026-10-25T00:00:00.000Z"
@@ -126,7 +129,7 @@ The probe is a single `SELECT 1`; it does not scan application tables. A databas
 - [`apps/android`](./apps/android): React Native / Expo companion app featuring quick-entry parsing, one-tap offline marker capture (< 50ms), a mini day timeline, offline review, an offline suggestion inbox with ICS paste import, automatic outbox synchronization, and a configurable server address.
 - [`tools/bench`](./tools/bench): Synthetic dataset generator, benchmark harness, regression comparison and JSON output.
 - [`scripts/`](./scripts): Local Windows backup and sandbox disaster-recovery helpers.
-- [`deploy/`](./deploy): Arch provisioning, systemd units, tag-triggered deploy, backup, restore and the server runbook.
+- [`packaging/`](./packaging): Arch package builder, installed payload (systemd units, launcher, updater, backup and restore), reference PKGBUILD, package tests and the server runbook.
 - [`docs/benchmarks`](./docs/benchmarks): Recorded benchmark baselines.
 - [`docs/reports`](./docs/reports): Increment completion reports.
 
@@ -164,7 +167,7 @@ node tools/bench/dist/index.js \
   --output docs/benchmarks/increment-3.5-pc-baseline.json \
   --host-label pc
 
-# Server baseline, run from a release checkout on the server
+# Server baseline, run from a checkout on the server
 node tools/bench/dist/index.js \
   --output docs/benchmarks/increment-3.5-server-baseline.json \
   --host-label server
@@ -180,13 +183,22 @@ The harness records CPU model, core count, total memory, Node version, platform,
 
 ## Deployment
 
-The always-on server runs the same code as a systemd service behind a tag-triggered deploy:
+The always-on server runs the same code as a systemd service, installed from a native Arch package that is built on this PC:
 
 ```bash
-git tag v0.4.0-increment-4
-git push server main --tags
+npm run build:package -- --version 0.3.5 --pkgrel 1
+# attach dist/packages/lifelogger-0.3.5-1-x86_64.pkg.tar.zst and its .sha256
+# to the GitHub release v0.3.5
 ```
 
-`deploy/README.md` is the runbook: first install, server preparation, normal deploy, manual and automatic rollback, restore, backups, logs, Node upgrades, troubleshooting and the verification drills. The deploy scripts are shellcheck-clean and use stubs in tests, so the first real run is not the first run.
+On the server:
 
-Secrets, private keys, keystores and real LAN addresses are never committed. Server settings belong in `/etc/lifelogger.env`, which the provisioning script creates with a generated API key.
+```bash
+pacman -U --noconfirm lifelogger-0.3.5-1-x86_64.pkg.tar.zst
+systemctl enable --now lifelogger.service lifelogger-backup.timer
+lifelogger-update 0.4.0     # health-checked upgrade with rollback
+```
+
+`packaging/README.md` is the runbook: build, release, first install, upgrade, rollback, restore, backups, logs, troubleshooting and the verification drills. The packaged shell scripts are shellcheck-clean and use stubs in tests, so the first real run is not the first run. Pushing a git tag does not deploy.
+
+Secrets, private keys, keystores and real LAN or tailnet addresses are never committed. Server settings belong in `/etc/lifelogger.env`, which the package installs as a `backup=` file with placeholder values.

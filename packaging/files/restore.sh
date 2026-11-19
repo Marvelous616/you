@@ -2,9 +2,9 @@
 #
 # Restore a Life Logger database from a backup file.
 #
-# This stops the service, moves the live database aside, installs the chosen
-# backup, removes stale WAL/SHM files, starts the service and health-checks it.
-# It refuses to run without an explicit --yes.
+# Stops the service, moves the live database aside, installs the chosen backup,
+# removes stale WAL/SHM files, starts the service and health-checks it.
+# Requires root and an explicit --yes.
 set -euo pipefail
 
 usage() {
@@ -15,18 +15,23 @@ Usage: restore.sh <backup.db> --yes
   --yes        Required confirmation for the destructive restore.
 
 Environment overrides:
-  DB_PATH         Live database            (default /var/lib/lifelogger/life.db)
+  DB_PATH         Live database            (default /var/lib/lifelogger/life-logger.sqlite)
   SERVICE_NAME    systemd service name     (default lifelogger)
   SYSTEMCTL       systemctl binary         (default systemctl)
-  SUDO            command prefix           (default sudo; empty disables)
   CURL            curl binary              (default curl)
   HEALTH_URL      Health endpoint          (default http://127.0.0.1:8080/health)
   HEALTH_ATTEMPTS Health check attempts    (default 10)
   HEALTH_DELAY    Seconds between attempts (default 1)
+  SQLITE3         sqlite3 binary           (default sqlite3)
   OWNER           File owner when run root (default lifelogger)
   GROUP           File group when run root (default lifelogger)
 EOF
 }
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Run this script as root." >&2
+  exit 1
+fi
 
 BACKUP=""
 CONFIRMED=0
@@ -65,14 +70,13 @@ fi
 
 if [ "$CONFIRMED" -ne 1 ]; then
   echo "Refusing to restore without --yes." >&2
-  echo "The live database at ${DB_PATH:-/var/lib/lifelogger/life.db} would be replaced." >&2
+  echo "The live database at ${DB_PATH:-/var/lib/lifelogger/life-logger.sqlite} would be replaced." >&2
   exit 3
 fi
 
-DB_PATH="${DB_PATH:-/var/lib/lifelogger/life.db}"
+DB_PATH="${DB_PATH:-/var/lib/lifelogger/life-logger.sqlite}"
 SERVICE_NAME="${SERVICE_NAME:-lifelogger}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
-SUDO="${SUDO-sudo}"
 CURL="${CURL:-curl}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/health}"
 HEALTH_ATTEMPTS="${HEALTH_ATTEMPTS:-10}"
@@ -80,14 +84,6 @@ HEALTH_DELAY="${HEALTH_DELAY:-1}"
 SQLITE3="${SQLITE3:-sqlite3}"
 OWNER="${OWNER:-lifelogger}"
 GROUP="${GROUP:-lifelogger}"
-
-run_systemctl() {
-  if [ -n "$SUDO" ]; then
-    "$SUDO" -n "$SYSTEMCTL" "$@"
-  else
-    "$SYSTEMCTL" "$@"
-  fi
-}
 
 health_check() {
   for _attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
@@ -107,7 +103,7 @@ if [ "$integrity" != "ok" ]; then
 fi
 
 echo "Stopping $SERVICE_NAME"
-run_systemctl stop "$SERVICE_NAME"
+"$SYSTEMCTL" stop "$SERVICE_NAME"
 
 mkdir -p "$(dirname "$DB_PATH")"
 
@@ -122,12 +118,10 @@ rm -f "$DB_PATH-wal" "$DB_PATH-shm"
 echo "Restoring $BACKUP to $DB_PATH"
 cp "$BACKUP" "$DB_PATH"
 chmod 600 "$DB_PATH"
-if [ "$(id -u)" -eq 0 ]; then
-  chown "$OWNER:$GROUP" "$DB_PATH"
-fi
+chown "$OWNER:$GROUP" "$DB_PATH"
 
 echo "Starting $SERVICE_NAME"
-run_systemctl start "$SERVICE_NAME"
+"$SYSTEMCTL" start "$SERVICE_NAME"
 
 if health_check; then
   echo "Restore complete; health check passed"

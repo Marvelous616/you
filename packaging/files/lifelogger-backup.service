@@ -1,6 +1,6 @@
 [Unit]
 Description=Life Logger database backup
-Documentation=file:/opt/lifelogger/current/deploy/README.md
+Documentation=https://github.com/Marvelous616/you
 After=network.target
 
 [Service]
@@ -8,6 +8,6 @@ Type=oneshot
 User=lifelogger
 Group=lifelogger
 EnvironmentFile=/etc/lifelogger.env
-ExecStart=/opt/lifelogger/backup.sh
+ExecStart=/usr/lib/lifelogger/backup.sh
 Nice=10
 IOSchedulingClass=idle

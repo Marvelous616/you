@@ -1,0 +1,21 @@
+Life Logger — installed package
+===============================
+
+Server bundle: /usr/lib/lifelogger/server.js
+Web app:       /usr/lib/lifelogger/web
+Version file:  /usr/lib/lifelogger/version
+Configuration: /etc/lifelogger.env   (preserved on upgrade)
+Data:          /var/lib/lifelogger   (not owned by this package)
+
+Commands
+--------
+
+  systemctl status lifelogger
+  journalctl -u lifelogger -n 100
+  curl -fsS http://127.0.0.1:8080/health
+
+  lifelogger-update <version>       upgrade from a GitHub release
+  /usr/lib/lifelogger/backup.sh     manual database backup
+  /usr/lib/lifelogger/restore.sh <backup.db> --yes
+
+Source and runbook: https://github.com/Marvelous616/you

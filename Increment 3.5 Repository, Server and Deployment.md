@@ -1,16 +1,17 @@
 # Increment 3.5: Repository, Server and Deployment
 
-Life Logger · Specification v1 · October 25, 2026 · Starts from `v0.3.0-increment-3`
+Life Logger · Specification v2 · November 20, 2026 · Starts from `v0.3.0-increment-3`
 
 ## 1. Purpose and outcome
 
-Increment 3 is engineering complete but exists only on the development PC. This increment puts it on GitHub and on the always-on home server, and makes every future increment reach the server by pushing a git tag. It adds no product features.
+Increment 3 is engineering complete but exists only on the development PC. This increment puts it on GitHub and on the always-on home server as a native Arch package, built on the PC and installed with `pacman`. It adds no product features.
 
 When this increment is done:
 
 - The code is in a GitHub repository, and a fresh clone builds and passes all tests.
+- A single `.pkg.tar.zst` is assembled on the PC, attached to a GitHub release, and installs the server bundle, web app, systemd units and configuration on Arch.
 - The server runs Life Logger as a service that starts on boot and restarts on failure.
-- Pushing a tag such as `v0.4.0-increment-4` builds, deploys and health-checks that release on the server, and rolls back automatically if the health check fails.
+- `lifelogger-update <version>` downloads a release, verifies it, installs it, health-checks it and rolls back on failure. Pushing a git tag does **not** deploy.
 - The database is backed up daily, and a restore has been tested.
 - The PC and the phone can both reach the server, and a change logged on one shows up on the other.
 - The test suite and benchmarks have been run on the server hardware, so the performance targets are measured on the real host.
@@ -21,34 +22,36 @@ When this increment is done:
 | --- | --- |
 | Code | TypeScript monorepo: `packages/domain`, `packages/persistence`, `packages/sync`, `apps/server` (Fastify, SQLite in WAL mode), `apps/web` (React, Vite), `apps/android` (Expo React Native) |
 | State | Tagged `v0.3.0-increment-3` per the Increment 3 report, 132 tests passing, benchmarks recorded in `docs/benchmarks/increment-3-baseline.json` |
-| Development machine | Windows PC (PowerShell) |
-| Server | Always-on Dell Inspiron 1545 laptop, hostname `zeserver`, Arch Linux, Pentium T4300 (2 cores), about 3.8 GB RAM, no swap, on the home LAN |
-| Access | SSH from the PC; the phone connects over Tailscale |
+| Development machine | Windows PC (PowerShell); Node v24.x, GNU tar available, no WSL and no makepkg |
+| Server | Always-on Dell Inspiron 1545 laptop, hostname `zeserver`, Arch Linux from a persistent archiso overlay, Pentium T4300 (2 cores), about 3.8 GB RAM, on the tailnet |
+| Access | SSH as root from the PC; the phone connects over Tailscale HTTPS |
+| Runtime dependency | Node 24 built-in `node:sqlite`; no native SQLite module to cross-compile |
 
-The server is a low-end machine. Anything this increment adds must be light on CPU and memory, and builds must not exhaust RAM.
+The server is a low-end machine and the package is built elsewhere. Anything this increment adds must be light on CPU and memory at runtime.
 
 ## 3. Scope and non-goals
 
-In scope: the GitHub push, runtime configuration, a health endpoint, deploy, backup and restore scripts, systemd units, server provisioning, connectivity from the PC and the phone, and on-host verification.
+In scope: the GitHub push, runtime configuration, a health endpoint, a reproducible Arch package, the release asset, a health-checked updater, backup and restore scripts, systemd units, server provisioning, connectivity from the PC and the phone, and on-host verification.
 
 Out of scope, and not to be started here:
 
 - Product features, schema changes and migrations.
 - The Android `expo-sqlite` binding. It is still needed before the 14-day dual-device dogfood and is the first work package of Increment 4.
 - The Diagnostics extension, full-text search, things and dynamic types, and recurring-event expansion.
-- Docker, a CI service, and exposing the server to the public internet.
+- Docker, a CI service, a GitHub Pages pacman repository, and exposing the server to the public internet.
 
 ## 4. Ground rules for the agent
 
 1. Do not guess names. Read the `package.json` scripts, the server entry point and the existing config before writing anything that refers to them, and use what you find.
-2. Keep all 132 existing tests passing. New code gets tests.
-3. No secrets, passwords, private keys, keystores or LAN addresses in the repository. Use placeholders and environment variables.
-4. Prefer boring tools: bash, systemd, git and the SQLite CLI. Add a runtime dependency only if the existing stack cannot do the job, and say why in the report.
+2. Keep all existing tests passing. New code gets tests.
+3. No secrets, passwords, private keys, keystores, LAN addresses or tailnet addresses in the repository. Use placeholders and environment variables.
+4. Prefer boring tools: bash, systemd, git, SQLite CLI and Node's standard library. esbuild is the one new build dependency: it turns the server and workspace packages into one JavaScript file so no `node_modules` ships in the package. Node's built-in zstd and a small ustar writer assemble the archive on Windows without WSL, Docker or fakeroot.
 5. Keep everything light. `/health` must not scan tables, and scripts must work with 3.8 GB of RAM.
 6. No emojis in the UI.
 7. Anything destructive on the server (deleting files, replacing the database, touching partitions) needs explicit confirmation from the owner first.
-8. Shell scripts are written for Linux. Add a `.gitattributes` so they keep LF line endings even though they are authored on Windows.
+8. Shell scripts are written for Linux. `.gitattributes` keeps LF line endings and git records the executable bits.
 9. When a step needs the owner, stop and list exactly what the owner must run, then continue once the output is pasted back.
+10. No package may overwrite `/etc/lifelogger.env`, `/var/lib/lifelogger` or the service contract. The env file is a pacman `backup=` file; data is owned by tmpfiles and never packaged.
 
 ## 5. Who does what
 
@@ -56,12 +59,12 @@ Out of scope, and not to be started here:
 | --- | --- | --- |
 | Repository hygiene, README, `.gitattributes`, secret scan | Yes | Reviews |
 | Create the GitHub repository and push | Provides commands | Yes |
-| Config, `/health`, graceful shutdown, tests | Yes |  |
-| Scripts, units and runbook in `deploy/` | Yes | Reviews |
-| Check live vs installed OS, reinstall if needed | Provides commands | Yes |
-| SSH keys, Tailscale accounts | Provides commands | Yes |
+| Config, `/health`, graceful shutdown, tests | Yes | |
+| Package sources, builder, updater, units, runbook in `packaging/` | Yes | Reviews |
+| Build and inspect the package on the PC | Yes | |
+| Publish the GitHub release asset | Provides commands, prepares asset | Yes (release creation) |
 | Commands on the server | Only over an SSH session the owner opens or approves | Otherwise runs them |
-| Tag pushes that deploy |  | Yes |
+| Install, upgrade and rollback | Provides exact commands | Runs or approves |
 
 ## 6. Work packages
 
@@ -71,10 +74,10 @@ Tasks
 
 - Verify the release tag exists with `git tag -l` and points at the Increment 3 commit. Create it if it does not.
 - Review `.gitignore`: `node_modules`, build output, `*.db`, `*.db-wal`, `*.db-shm`, `.env` files, Expo and Android build output, `*.jks` and `*.keystore`.
-- Add `.gitattributes` forcing LF for `*.sh`, `deploy/**` and unit files, and mark the shell scripts executable in git with `git update-index --chmod=+x`.
-- Scan the working tree and the full history for secrets and for absolute local paths. Replace absolute `file://` links in tracked docs with relative links.
-- Add a `README.md`: what it is, requirements, install, test, build, run, environment variables, repository layout, and a link to `deploy/README.md`.
-- Owner: create the GitHub repository (private recommended), add `origin`, and push `main` and all tags.
+- Add `.gitattributes` forcing LF for `*.sh`, `packaging/**` and unit files, and mark shell scripts executable in git with `git update-index --chmod=+x`.
+- Scan the working tree and the full history for secrets and absolute local paths. Replace absolute `file://` links in tracked docs with relative links.
+- Add a `README.md`: what it is, requirements, install, test, build, run, environment variables, repository layout, and a link to `packaging/README.md`.
+- Owner: create the GitHub repository, add `origin`, and push `main` and all tags.
 
 Acceptance
 
@@ -87,73 +90,93 @@ Acceptance
 Tasks
 
 - Read every runtime setting from environment variables with documented defaults: database path, port, bind address, static web directory and log level. Commit an `.env.example`.
-- Make the server serve the built web app if it does not already. `index.html` is sent with `no-cache` and hashed assets with long cache lifetimes, so a new release shows up on the next page load.
-- Add `GET /health`, with no authentication, returning JSON with `status`, the app version (from the release tag or `package.json`), the schema version and the sync protocol version. It reads cached or pragma values only, and returns 503 if the database cannot be opened.
-- Show the server version somewhere visible in the web UI (a footer or the settings screen), so a deploy can be confirmed by eye.
+- Make the server serve the built web app. `index.html` is sent with `no-cache` and hashed assets with long cache lifetimes, so a new release shows up on the next page load.
+- Add `GET /health`, with no authentication, returning JSON with `status`, the app version, the schema version and the sync protocol version. It reads cached or pragma values only, and returns 503 if the database cannot be opened.
+- Show the server version in the web footer, so an install can be confirmed by eye.
 - Handle `SIGTERM` and `SIGINT`: stop accepting requests, finish in-flight ones, checkpoint the WAL, close SQLite and exit 0.
-- On startup, log the version, the database path and the schema version. If the database schema is newer than the code, log a warning and keep running. This relies on the rule that migrations are additive within a release; record the rule in `deploy/README.md`.
+- On startup, log the version, the database path and the schema version. If the database schema is newer than the code, log a warning and keep running. Additive-only migrations within a release are recorded in `packaging/README.md`.
 
 Acceptance
 
-- Tests cover `/health` (ok and failure), environment parsing and clean shutdown. All 132 earlier tests still pass.
-- Deploying a trivial UI change makes the new version visible on a normal page reload.
+- Tests cover `/health` (ok and failure), environment parsing and clean shutdown. All earlier tests still pass.
+- A trivial UI change in a new package makes the new version visible on a normal page reload.
 
-### WP 3.5.3: Deploy artifacts
+### WP 3.5.3: Package build artifacts
 
-Create a `deploy/` folder. The owner reviews everything in it before it runs on the server.
+Create a `packaging/` folder. The owner reviews everything in it before anything runs on the server.
 
 | File | Purpose |
 | --- | --- |
-| `server-setup.sh` | One-time, idempotent provisioning for Arch: packages, the `lifelogger` user, directories, zram swap, lid and sleep settings, unit installation, bare repository and hook installation. Safe to run twice. |
-| `lifelogger.service` | The systemd unit (reference in section 7). Reads settings from `/etc/lifelogger.env`. |
-| `deploy.sh` | Builds a tag into its own release folder, backs up the database, switches the `current` symlink, restarts, health-checks, rolls back on failure and prunes old releases (keep the last 5). |
-| `post-receive` | Git hook that runs `deploy.sh` for pushed tags matching `v*` and ignores everything else. |
-| `backup.sh`, `lifelogger-backup.service`, `lifelogger-backup.timer` | Daily consistent backup with `sqlite3 .backup`, an integrity check on the copy, 14 days of retention, and a non-zero exit on any failure. |
-| `restore.sh` | Stops the service, moves the live database aside, restores the chosen backup, removes stale `-wal` and `-shm` files, starts the service and health-checks. Requires a backup path and `--yes`. |
-| `README.md` | Runbook: first install, normal deploy, rollback, restore, logs, upgrading Node, troubleshooting. |
+| `build-package.mjs` | Cross-platform builder: runs the workspace build, esbuild-bundles the server, stages files, writes `.PKGINFO`/`.MTREE`, assembles a deterministic tar and compresses it with zstd. |
+| `lib/tar.mjs` | Minimal ustar header writer and gzip mtree generator. No new runtime dependency. |
+| `files/` | Installed payload: systemd units, `lifelogger` launcher, `lifelogger-update`, backup/restore scripts, sysusers and tmpfiles snippets, env template, install scriptlet and package README. |
+| `PKGBUILD` | Reference for reproducing the same package with `makepkg` on a native Arch host. Not used for releases. |
+| `test/` | Package metadata tests (vitest) and shell safety-gate tests. |
+| `README.md` | Runbook: build, release, install, upgrade, rollback, restore, logs, server facts and troubleshooting. |
 
-Requirements for the scripts
+Package layout
 
-- `set -euo pipefail`, quoted variables, and clean under `shellcheck` (or the report says why not).
-- `deploy.sh` validates the tag against `^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9._-]+)?$`, uses `flock` so two deploys cannot overlap, and supports `--dry-run`.
-- Paths and the `systemctl` and `curl` commands are overridable by environment variables, so the scripts can be tested against a temporary directory with stubs.
-- `deploy/test/` holds a bash test that proves a successful deploy switches the symlink, a failing health check rolls back, and a bad tag is rejected.
+```text
+usr/bin/lifelogger                       launcher; forces APP_VERSION from the package
+usr/bin/lifelogger-update                release updater with health check and rollback
+usr/lib/lifelogger/server.js             esbuild bundle, no node_modules
+usr/lib/lifelogger/version               pkgver, used by /health
+usr/lib/lifelogger/web/                  built Vite app
+usr/lib/lifelogger/backup.sh
+usr/lib/lifelogger/restore.sh
+usr/lib/systemd/system/lifelogger.service
+usr/lib/systemd/system/lifelogger-backup.service
+usr/lib/systemd/system/lifelogger-backup.timer
+usr/lib/sysusers.d/lifelogger.conf
+usr/lib/tmpfiles.d/lifelogger.conf
+usr/share/doc/lifelogger/README
+etc/lifelogger.env                       backup=, never replaced on upgrade
+.INSTALL                                 creates account/dirs, prints next steps
+.PKGINFO / .MTREE                        generated by the builder
+```
+
+Requirements
+
+- `set -euo pipefail`, quoted variables and clean `shellcheck` in every installed shell script.
+- `restore.sh` requires root and an explicit `--yes`.
+- `lifelogger-update` validates `<x.y.z>`, verifies the release SHA-256, backs up the database, installs with `pacman -U`, enables the units, waits for `/health` to report the new version, and restores the previous package on failure. `--health-url` exists so the rollback drill can force a failure.
+- All paths and commands are overridable by environment variables so the shell tests can use stubs.
+- The archive has uid/gid 0, fixed mtime, modes 0755 for executables, 0600 for the env file and 0644 for everything else.
 
 Acceptance
 
-- The stub-based deploy tests pass and `shellcheck` is clean.
-- Every script refuses to run destructive steps without its documented confirmation.
+- `npm run build:package -- --version 0.3.5 --pkgrel 1` produces `lifelogger-0.3.5-1-x86_64.pkg.tar.zst` and a `.sha256` file.
+- An independent libarchive reader (`tar -tvf`) lists the expected files with the expected modes.
+- Package tests and shell safety tests pass; `shellcheck` is clean.
 
 ### WP 3.5.4: Server provisioning
 
-Mostly run by the owner, with the agent providing the exact commands and checking the output.
+Mostly run by the owner, with the agent providing exact commands and checking output.
 
-Tasks
-
-1. Run `findmnt /` and `lsblk -f`. The server's system information showed an `/run/archiso/cowspace` overlay, which means the live installer environment. If that is what this is, install Arch to the internal disk before continuing, or record a written decision to accept the risk. The runbook must say which was chosen and why.
-2. Switch SSH to key login and disable password login.
-3. Match the Node major version on the server to the PC (`node -v` on both, recorded in the report).
-4. Run `deploy/server-setup.sh`.
-5. Add the `server` remote on the PC.
+1. Run `findmnt /`, `lsblk -f`, `cat /etc/os-release`, `uname -r` and `node -v`. The server is a persistent Arch archiso overlay, not an installed system; the owner accepted that risk in writing on 2026-10-26. The decision and mitigations are recorded in `packaging/README.md`.
+2. Confirm SSH key login from the PC.
+3. Confirm Node major 24 on the server (it is v24.22.1). No build happens there, so only the runtime matters.
+4. Copy the package and its checksum to the server and verify with `sha256sum -c`.
+5. Install with `pacman -U --noconfirm`, set `API_KEY` in `/etc/lifelogger.env`, then enable the service and the backup timer.
 
 Acceptance
 
-- The `lifelogger` service and the backup timer are enabled.
+- `pacman -Qi lifelogger`, `pacman -Qkk lifelogger`, `systemctl is-active lifelogger` and `systemctl is-enabled lifelogger-backup.timer` all pass.
 - After a reboot, the service is up and healthy within 2 minutes without anyone logging in.
 
-### WP 3.5.5: First deploy and on-host verification
+### WP 3.5.5: First install and on-host verification
 
 Tasks
 
-- Tag `v0.3.5-increment-3.5` and push it to the server remote.
-- Record the build duration and the peak memory of `npm ci` plus the build on the server, for example with `/usr/bin/time -v`. If the build runs out of memory or takes more than 10 minutes, document the fallback of building on the PC and shipping the result.
-- Run the full test suite on the server.
-- Run the benchmark harness on the server and save the result as `docs/benchmarks/increment-3.5-server-baseline.json`, including host details (CPU model, RAM, Node version, tag). Report each metric against its target and against the PC baseline. Any metric over target is a blocker, and any metric with less than 5x headroom is flagged.
+- Tag `v0.3.5`, build the package on the PC from that tag, and upload the `.pkg.tar.zst` and `.sha256` to the GitHub release.
+- Record the PC-side build duration and peak memory of `npm ci` plus the package build. No build runs on the server.
+- Run the full test suite on the server from a fresh clone or a copied checkout.
+- Run the benchmark harness on the server and save the result as `docs/benchmarks/increment-3.5-server-baseline.json`, including host details (CPU model, RAM, Node version, tag). Report each metric against its target and against the PC baseline. Any metric over target is a blocker; any metric with less than 5x headroom is flagged.
 - Record the idle memory and CPU use of the running service.
 
 Acceptance
 
-- The service answers `/health` with the deployed version.
+- `/health` answers with `version: 0.3.5`, matching `/usr/lib/lifelogger/version` and `pacman -Q lifelogger`.
 - All tests pass on the server, and all benchmark targets pass on the server.
 
 ### WP 3.5.6: Benchmark regression guard
@@ -166,15 +189,14 @@ Tasks
 
 Acceptance
 
-- A test shows that compare mode passes on the baseline itself and fails on a deliberately slowed copy.
+- A test shows compare mode passes on the baseline itself and fails on a deliberately slowed copy.
 
 ### WP 3.5.7: Connectivity
 
 Tasks
 
-- Give the server a stable address: a DHCP reservation or a stable hostname on the LAN.
-- Install Tailscale on the server, the phone and the PC, and record the server's tailnet name.
-- Android must reach the server over the tailnet. Android blocks plain http by default, so choose one of two options and record the decision in the runbook: A, HTTPS through Tailscale (recommended if available), or B, allow cleartext for the app through Expo build properties.
+- Install Tailscale on the server, the phone and the PC, and record the server's tailnet name in the runbook.
+- Use option A: HTTPS through `tailscale serve --bg 8080`. The service binds to `127.0.0.1`; Android needs no cleartext exemption.
 - Make sure the Android app has a way to set the server address, and use it.
 - End-to-end check: log a marker on the PC and see it on the phone after sync, then the reverse. Import an `.ics` file in the web app and see the suggestions on the phone.
 
@@ -184,95 +206,70 @@ Acceptance
 
 ## 7. Reference snippets
 
-These are starting points. Adapt names and paths to what the repository actually uses.
+Build on the PC:
 
-`deploy/lifelogger.service`
-
-```ini
-[Unit]
-Description=Life Logger
-After=network-online.target
-
-[Service]
-User=lifelogger
-WorkingDirectory=/opt/lifelogger/current
-EnvironmentFile=/etc/lifelogger.env
-ExecStart=/usr/bin/node apps/server/dist/index.js
-Restart=always
-MemoryMax=1G
-
-[Install]
-WantedBy=multi-user.target
+```bash
+git tag v0.3.5
+npm ci
+npm run build:package -- --version 0.3.5 --pkgrel 1
+# attach dist/packages/lifelogger-0.3.5-1-x86_64.pkg.tar.zst and its .sha256
+# to the GitHub release v0.3.5
 ```
 
-`/etc/lifelogger.env` (variable names must match what WP 3.5.2 settles on)
+Install on the server:
 
+```bash
+scp lifelogger-0.3.5-1-x86_64.pkg.tar.zst* root@zeserver:/tmp/
+ssh root@zeserver
+cd /tmp && sha256sum -c lifelogger-0.3.5-1-x86_64.pkg.tar.zst.sha256
+pacman -U --noconfirm lifelogger-0.3.5-1-x86_64.pkg.tar.zst
+# set API_KEY in /etc/lifelogger.env
+systemctl enable --now lifelogger.service lifelogger-backup.timer
+curl -fsS http://127.0.0.1:8080/health
 ```
-DB_PATH=/var/lib/lifelogger/life.db
+
+Upgrade from a GitHub release:
+
+```bash
+lifelogger-update 0.4.0
+```
+
+`/etc/lifelogger.env` template:
+
+```text
+DB_PATH=/var/lib/lifelogger/life-logger.sqlite
+WEB_DIR=/usr/lib/lifelogger/web
+HOST=127.0.0.1
 PORT=8080
-HOST=0.0.0.0
-```
-
-`deploy/deploy.sh` outline
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-TAG="${1:?usage: deploy.sh <tag>}"
-APP="${APP_ROOT:-/opt/lifelogger}"; DB="${DB_PATH:-/var/lib/lifelogger/life.db}"
-[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9._-]+)?$ ]] || { echo "bad tag"; exit 2; }
-exec 9>"$APP/.deploy.lock"; flock -n 9 || { echo "deploy already running"; exit 3; }
-PREV="$(readlink "$APP/current" || true)"
-git -C "$APP/repo.git" worktree add "$APP/releases/$TAG" "$TAG"
-( cd "$APP/releases/$TAG" && npm ci && npm run build )
-[ -f "$DB" ] && sqlite3 "$DB" ".backup '/var/lib/lifelogger/backups/pre-$TAG.db'"
-ln -sfn "$APP/releases/$TAG" "$APP/current"
-${SYSTEMCTL:-systemctl} restart lifelogger
-for _ in $(seq 10); do sleep 1; ${CURL:-curl} -fs localhost:8080/health && exit 0; done
-if [ -n "$PREV" ]; then ln -sfn "$PREV" "$APP/current"; ${SYSTEMCTL:-systemctl} restart lifelogger; fi
-echo "health check failed, rolled back to ${PREV:-nothing}"; exit 1
-```
-
-`deploy/post-receive`
-
-```bash
-#!/usr/bin/env bash
-unset GIT_DIR
-while read -r _old _new ref; do
-  case "$ref" in refs/tags/v*) /opt/lifelogger/deploy.sh "${ref#refs/tags/}" ;; esac
-done
-```
-
-From the PC, a deploy is then:
-
-```
-git tag v0.4.0-increment-4
-git push server main --tags
+LOG_LEVEL=info
+API_KEY=<generated on the server>
 ```
 
 ## 8. Quality gates
 
 - [ ] A fresh clone from GitHub builds and passes all tests.
-- [ ] No secrets or absolute local paths in the repository or its history.
+- [ ] No secrets, LAN or tailnet addresses, or absolute local paths in the repository or its history.
 - [ ] `.gitattributes` keeps LF endings, and the scripts are executable in git.
 - [ ] `/health` returns the version, schema version and sync protocol version, and is tested.
 - [ ] Clean shutdown on `SIGTERM` is tested.
-- [ ] Deploy script tests pass with stubs, and `shellcheck` is clean.
+- [ ] Package metadata tests, shell safety tests and `shellcheck` pass.
+- [ ] The package installs cleanly with `pacman -U` and passes `pacman -Qkk`.
+- [ ] `backup=` preserves `/etc/lifelogger.env` across an upgrade.
 - [ ] The service is enabled, survives a reboot and starts without a login.
-- [ ] A tag push deploys and health-checks, and the new version shows in the web UI.
-- [ ] The rollback drill and the restore drill passed.
+- [ ] `lifelogger-update` health-checks and rolls back on failure.
+- [ ] The rollback drill, restore drill and reboot drill passed.
 - [ ] The daily backup timer runs, and a backup passes `PRAGMA integrity_check`.
 - [ ] Tests and benchmarks pass on the server, and the baseline JSON is saved.
 - [ ] The benchmark regression guard works.
 - [ ] The PC and the phone sync through the server over Tailscale.
-- [ ] Release tagged `v0.3.5-increment-3.5` and pushed.
+- [ ] Release `v0.3.5` with its package asset exists; prior increment tags stay as history.
 
 ## 9. Verification drills
 
-1. **Rollback drill.** Push a throwaway tag whose build starts but fails `/health` (for example by forcing a 503 through an environment flag). Expect an automatic rollback with the previous version running. Delete the tag afterwards and record the timing.
+1. **Rollback drill.** Run `lifelogger-update <version> --health-url http://127.0.0.1:1/health` after at least one successful install. The install succeeds, the health check fails, and the helper reinstalls the previous package. Confirm `/health` reports the old version and record the timing.
 2. **Restore drill.** Take a backup, change some data, then restore the backup with `restore.sh --yes` against a scratch database path first. Confirm the restored data and `PRAGMA integrity_check`, and record the timing.
 3. **Reboot drill.** Reboot the server and confirm the service and the backup timer come back without a login.
-4. **Build drill.** Record the `npm ci` and build time and the peak memory on the server.
+4. **Build drill.** Record the PC-side `npm ci` and package build time and peak memory. No build runs on the server.
 
 ## 10. Completion report
 
@@ -280,9 +277,9 @@ Use the same format as the earlier reports, plus a Server facts section containi
 
 - The output of `findmnt /` and `lsblk -f`.
 - The Node versions on the PC and the server.
-- A summary of the SSH and Tailscale setup.
-- The results and timings of the drills.
-- The build time and peak memory, and the idle resource use.
+- A summary of the SSH and Tailscale setup, with addresses replaced by placeholders.
+- The package build time, package size and checksum.
+- The results and timings of the drills, and the idle resource use.
 
 The benchmark table gets two columns, one for the PC and one for the server.
 
@@ -290,15 +287,16 @@ The benchmark table gets two columns, one for the PC and one for the server.
 
 | Risk | Mitigation |
 | --- | --- |
-| The server is running the live installer | WP 3.5.4 step 1, with the decision recorded |
-| Builds exhaust RAM on a 3.8 GB machine | zram swap, `MemoryMax` on the service, and the fallback of building on the PC |
-| Windows line endings break the shell scripts | `.gitattributes` and an LF check in the quality gates |
-| The native SQLite module fails to build or load on the old CPU | Install build tools, run the tests on the server before the first real deploy, and record the driver and Node version |
-| Android blocks plain http | The WP 3.5.7 decision between HTTPS and cleartext |
-| A bad release locks in a schema change | Additive-only migrations and a backup before every deploy |
+| The server runs a persistent archiso, not an installed Arch | Owner accepted the risk in writing; `packaging/README.md` records the evidence and mitigations |
+| Hand-built package is not made by makepkg | Deterministic ustar/mtree writer; verified with libarchive (`tar -tvf`) and by installing it on the real host |
+| Windows line endings break the shell scripts | `.gitattributes`, executable bits and `npm run shellcheck` |
+| The native SQLite module fails on the old CPU | None needed: Node 24 ships `node:sqlite`, and the server's Node major matches the PC |
+| Android blocks plain http | HTTPS through `tailscale serve`, with `HOST=127.0.0.1` |
+| A bad release locks in a schema change | Additive-only migrations, pre-update backup and automatic package rollback |
 | Backups on the same disk are lost with it | A periodic copy to the PC, noted in the runbook |
+| Release upload needs credentials | PC prepares the asset; owner creates the release or authenticates `gh` |
 
-Decisions to record in `deploy/README.md`: live vs installed OS, HTTPS vs cleartext, build on the server vs on the PC, and private vs public repository.
+Decisions to record in `packaging/README.md`: live vs installed OS, HTTPS vs cleartext, build on the PC, GitHub release asset vs pacman repository, and public repository.
 
 ## 12. After this increment
 

@@ -1,0 +1,31 @@
+# Reference PKGBUILD for building on a native Arch host.
+#
+# The released package is built on the Windows development PC with
+#   npm run build:package -- --version 0.3.5 --pkgrel 1
+# and attached to the GitHub release as an asset. This file exists so the same
+# package can also be reproduced with makepkg on Arch; it deliberately reuses
+# the cross-platform builder instead of maintaining a second file manifest.
+
+pkgname=lifelogger
+pkgver=0.3.5
+pkgrel=1
+pkgdesc='Life Logger personal timeline server'
+arch=(x86_64)
+url='https://github.com/Marvelous616/you'
+depends=(nodejs>=24 systemd sqlite curl)
+makedepends=(npm)
+backup=(etc/lifelogger.env)
+source=("$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/you-$pkgver"
+  npm ci
+  npm run build:package -- --version "$pkgver" --pkgrel "$pkgrel" --no-build \
+    --out "$srcdir/package" --source-date "$SOURCE_DATE_EPOCH"
+}
+
+package() {
+  bsdtar -xf "$srcdir/package/lifelogger-$pkgver-$pkgrel-$arch.pkg.tar.zst" \
+    -C "$pkgdir" --no-same-owner --no-same-permissions
+}
